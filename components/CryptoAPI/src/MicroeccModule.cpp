@@ -14,9 +14,8 @@ const struct uECC_Curve_t *curve = uECC_secp256r1();
 
 int MicroeccModule::init(Algorithms _, Hashes hash, size_t __)
 {
-  int initial_memory = esp_get_minimum_free_heap_size();
+  // CORREÇÃO: Remover medição de memória
   unsigned long start_time = esp_timer_get_time() / 1000;
-  unsigned long cycle_count_before = esp_cpu_get_cycle_count();
 
   commons.set_chosen_hash(hash);
 
@@ -25,17 +24,11 @@ int MicroeccModule::init(Algorithms _, Hashes hash, size_t __)
   uECC_set_rng(&MicroeccModule::rng_function);
 
   unsigned long end_time = esp_timer_get_time() / 1000;
-  int final_memory = esp_get_minimum_free_heap_size();
-  unsigned long cycle_count_after = esp_cpu_get_cycle_count();
-
-  // commons.print_elapsed_time(start_time, end_time, "init");
-  // commons.print_used_memory(initial_memory, final_memory, "init");
-  // commons.print_total_cycles(cycle_count_before, cycle_count_after, "init");
+  ESP_LOGI(TAG, "microecc_init completed in %lu ms", end_time - start_time);
 
   commons.log_success("init");
   return 0;
 }
-
 int MicroeccModule::gen_rsa_keys(unsigned int rsa_key_size, int rsa_exponent)
 {
   return -1;
@@ -48,10 +41,8 @@ int MicroeccModule::get_signature_size()
 
 int MicroeccModule::gen_keys()
 {
-  heap_caps_monitor_local_minimum_free_size_start();
-  int initial_memory = esp_get_minimum_free_heap_size();
+  // CORREÇÃO: Remover medição de memória
   unsigned long start_time = esp_timer_get_time() / 1000;
-  unsigned long cycle_count_before = esp_cpu_get_cycle_count();
 
   size_t private_key_size = MY_ECC_256_PRIVATE_KEY_SIZE;
   size_t public_key_size = MY_ECC_256_PUBLIC_KEY_SIZE;
@@ -59,9 +50,8 @@ int MicroeccModule::gen_keys()
   private_key = (unsigned char *)malloc(private_key_size * sizeof(unsigned char));
   public_key = (unsigned char *)malloc(public_key_size * sizeof(unsigned char));
 
-  esp_task_wdt_reset();
   int ret = uECC_make_key(public_key, private_key, uECC_secp256r1());
-  esp_task_wdt_reset();
+
   if (ret == 0)
   {
     commons.log_error("uECC_make_key");
@@ -69,16 +59,7 @@ int MicroeccModule::gen_keys()
   }
 
   unsigned long end_time = esp_timer_get_time() / 1000;
-  int final_memory = esp_get_minimum_free_heap_size();
-  unsigned long cycle_count_after = esp_cpu_get_cycle_count();
-  heap_caps_monitor_local_minimum_free_size_stop();
-
-  commons.print_elapsed_time(start_time, end_time, "micro_gen_keys");
-  commons.print_used_memory(initial_memory, final_memory, "micro_gen_keys");
-  commons.print_total_cycles(cycle_count_before, cycle_count_after, "micro_gen_keys");
-
-  ESP_LOG_BUFFER_HEX("public_key", this->public_key, public_key_size);
-  ESP_LOG_BUFFER_HEX("private_key", this->private_key, private_key_size);
+  ESP_LOGI(TAG, "microecc_gen_keys completed in %lu ms", end_time - start_time);
 
   commons.log_success("gen_keys");
   return 0;
@@ -155,11 +136,10 @@ int MicroeccModule::private_key_to_pem_format(unsigned char *private_key_buffer)
   return 0;
 }
 
-int MicroeccModule::sign(const unsigned char *message, size_t message_length, unsigned char *signature, size_t *_)
+int MicroeccModule::sign(const unsigned char *message, size_t message_length, 
+                         unsigned char *signature, size_t *_)
 {
-  int hash_initial_memory = esp_get_minimum_free_heap_size();
-  unsigned long hash_start_time = esp_timer_get_time() / 1000;
-
+  // CORREÇÃO: Remover medição de memória
   size_t hash_length = commons.get_hash_length();
   unsigned char *hash = (unsigned char *)malloc(hash_length * sizeof(unsigned char));
 
@@ -167,49 +147,33 @@ int MicroeccModule::sign(const unsigned char *message, size_t message_length, un
   if (ret != 0)
   {
     commons.log_error("hash_message");
+    free(hash);
     return ret;
   }
 
-  unsigned long hash_end_time = esp_timer_get_time() / 1000;
-  int hash_final_memory = esp_get_minimum_free_heap_size();
-
-  commons.print_elapsed_time(hash_start_time, hash_end_time, "hash_message");
-  commons.print_used_memory(hash_initial_memory, hash_final_memory, "hash_message");
-
-  heap_caps_monitor_local_minimum_free_size_start();
-  int initial_memory = esp_get_minimum_free_heap_size();
   unsigned long start_time = esp_timer_get_time() / 1000;
-  unsigned long cycle_count_before = esp_cpu_get_cycle_count();
 
-  esp_task_wdt_reset();
   ret = uECC_sign(private_key, hash, hash_length, signature, uECC_secp256r1());
-  esp_task_wdt_reset();
+
   if (ret == 0)
   {
     commons.log_error("uECC_sign");
+    free(hash);
     return -1;
   }
 
   unsigned long end_time = esp_timer_get_time() / 1000;
-  int final_memory = esp_get_minimum_free_heap_size();
-  unsigned long cycle_count_after = esp_cpu_get_cycle_count();
-  heap_caps_monitor_local_minimum_free_size_stop();
-
-  commons.print_elapsed_time(start_time, end_time, "micro_sign");
-  commons.print_used_memory(initial_memory, final_memory, "micro_sign");
-  commons.print_total_cycles(cycle_count_before, cycle_count_after, "mbedtls_gen_keys");
+  // ESP_LOGD(TAG, "microecc_sign: %lu ms", end_time - start_time);
 
   free(hash);
 
   commons.log_success("sign");
   return 0;
 }
-
-int MicroeccModule::verify(const unsigned char *message, size_t message_length, unsigned char *signature, size_t __)
+int MicroeccModule::verify(const unsigned char *message, size_t message_length, 
+                           unsigned char *signature, size_t __)
 {
-  int hash_initial_memory = esp_get_minimum_free_heap_size();
-  unsigned long hash_start_time = esp_timer_get_time() / 1000;
-
+  // CORREÇÃO: Remover medição de memória
   size_t hash_length = commons.get_hash_length();
   unsigned char *hash = (unsigned char *)malloc(hash_length * sizeof(unsigned char));
 
@@ -217,44 +181,29 @@ int MicroeccModule::verify(const unsigned char *message, size_t message_length, 
   if (ret != 0)
   {
     commons.log_error("hash_message");
+    free(hash);
     return ret;
   }
 
-  unsigned long hash_end_time = esp_timer_get_time() / 1000;
-  int hash_final_memory = esp_get_minimum_free_heap_size();
-
-  commons.print_elapsed_time(hash_start_time, hash_end_time, "hash_message");
-  commons.print_used_memory(hash_initial_memory, hash_final_memory, "hash_message");
-
-  heap_caps_monitor_local_minimum_free_size_start();
-  int initial_memory = esp_get_minimum_free_heap_size();
   unsigned long start_time = esp_timer_get_time() / 1000;
-  unsigned long cycle_count_before = esp_cpu_get_cycle_count();
 
-  esp_task_wdt_reset();
   ret = uECC_verify(public_key, hash, hash_length, signature, uECC_secp256r1());
-  esp_task_wdt_reset();
+
   if (ret != 1)
   {
     commons.log_error("uECC_verify");
+    free(hash);
     return -1;
   }
 
   unsigned long end_time = esp_timer_get_time() / 1000;
-  int final_memory = esp_get_minimum_free_heap_size();
-  unsigned long cycle_count_after = esp_cpu_get_cycle_count();
-  heap_caps_monitor_local_minimum_free_size_stop();
-
-  commons.print_elapsed_time(start_time, end_time, "micro_verify");
-  commons.print_used_memory(initial_memory, final_memory, "micro_verify");
-  commons.print_total_cycles(cycle_count_before, cycle_count_after, "mbedtls_gen_keys");
+  // ESP_LOGD(TAG, "microecc_verify: %lu ms", end_time - start_time);
 
   free(hash);
 
   commons.log_success("verify");
   return 0;
 }
-
 void MicroeccModule::close()
 {
   free(private_key);

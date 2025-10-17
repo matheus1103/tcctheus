@@ -339,7 +339,8 @@
 #define USE_CERT_BUFFERS_2048
 
 /* RSA_LOW_MEM: Half as much memory but twice as slow. */
-#define RSA_LOW_MEM
+/* DISABLED FOR PERFORMANCE - ESP32-C6 has enough RAM */
+/* #define RSA_LOW_MEM */
 
 /* optionally turn off SHA512/224 SHA512/256 */
 /* #define WOLFSSL_NOSHA512_224 */
@@ -513,14 +514,26 @@
 /* hash limit for test.c */
 #define HASH_SIZE_LIMIT
 
-/* USE_FAST_MATH is default */
-#define USE_FAST_MATH
+/* USE_FAST_MATH is default - good for RSA 2048 */
+/* For RSA 4096 support, use SP_MATH instead (see below) */
+#ifndef WOLFSSL_USE_SP_MATH
+/* #define USE_FAST_MATH */  /* Disabled in favor of SP_MATH */
+#endif
 
-/*****      Use SP_MATH      *****/
-/* #undef  USE_FAST_MATH         */
-/* #define SP_MATH               */
-/* #define WOLFSSL_SP_MATH_ALL   */
-/* #define WOLFSSL_SP_RISCV32    */
+/*****      Use SP_MATH (ENABLED FOR RSA 4096 SUPPORT)    *****/
+/* SP_MATH uses less memory and is better for large RSA keys */
+#define WOLFSSL_USE_SP_MATH
+#undef  USE_FAST_MATH
+#define SP_MATH
+#define WOLFSSL_SP_MATH_ALL
+#define WOLFSSL_HAVE_SP_RSA
+#define WOLFSSL_HAVE_SP_DH
+#define WOLFSSL_HAVE_SP_ECC
+#define WOLFSSL_SP_2048  /* Support for RSA 2048 */
+#define WOLFSSL_SP_4096  /* Support for RSA 4096 */
+/* REMOVED: WOLFSSL_SP_NO_MALLOC causes stack overflow */
+/* Allow SP_MATH to use heap allocation for large operations */
+#define WOLFSSL_SP_CACHE_RESISTANT  /* More secure, uses heap when needed */
 
 /***** Use Integer Heap Math *****/
 /* #undef USE_FAST_MATH          */
@@ -535,7 +548,21 @@
     defined(WOLFSSL_SP_RISCV32)
 #endif
 
+/* OPTION 1: Use SMALL_STACK with heap allocation (required for RSA 4096 with SP_MATH) */
+/* ENABLED to prevent stack overflow with SP_MATH */
 #define WOLFSSL_SMALL_STACK
+
+/* With SP_MATH enabled, FP_MAX_BITS is less critical but still needed */
+/* SP_MATH handles large numbers more efficiently than FAST_MATH */
+#ifndef FP_MAX_BITS
+/* For RSA 2048: use (2048 * 2) = 4096 */
+/* For RSA 4096: use (4096 * 2) = 8192 */
+#define FP_MAX_BITS (8192 * 2)  /* Set for RSA 4096 support with SP_MATH */
+#endif
+
+/* OPTION 3 (RECOMMENDED): Use SP_MATH instead of FAST_MATH for better memory control */
+/* This is the best option for RSA 4096 on embedded systems */
+/* See lines 520-524 to enable SP_MATH */
 
 #define HAVE_VERSION_EXTENDED_INFO
 /* #define HAVE_WC_INTROSPECTION */
@@ -743,8 +770,13 @@
 
 /*  #define NO_WOLFSSL_ESP32_CRYPT_AES             */
 /*  #define NO_WOLFSSL_ESP32_CRYPT_RSA_PRI         */
+
+/* Keep MP_MUL and MULMOD enabled for better performance */
 /*  #define NO_WOLFSSL_ESP32_CRYPT_RSA_PRI_MP_MUL  */
 /*  #define NO_WOLFSSL_ESP32_CRYPT_RSA_PRI_MULMOD  */
+
+/* ESP32-C6 HW limit: max 3072 bits for exptmod, but MP_MUL/MULMOD can help */
+/* Let WolfSSL automatically fall back to SW when operand > 3072 bits */
 /*  #define NO_WOLFSSL_ESP32_CRYPT_RSA_PRI_EXPTMOD */
 /***** END CONFIG_IDF_TARGET_ESP32C6 *****/
 
@@ -814,6 +846,22 @@
 #undef ESP_RSA_MULM_BITS
 #define ESP_RSA_MULM_BITS 16
 #endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32C6)
+/* ESP32-C6 has hardware RSA acceleration but with 3072-bit limit */
+/* Set thresholds for optimal HW/SW hybrid performance */
+#undef ESP_RSA_EXPT_XBITS
+#define ESP_RSA_EXPT_XBITS 32
+
+#undef ESP_RSA_MULM_BITS
+#define ESP_RSA_MULM_BITS 16
+
+/* Maximum bits for HW operations - fallback to SW above this */
+#ifndef ESP_HW_RSAMAX_BITS
+#define ESP_HW_RSAMAX_BITS 3072
+#endif
+#endif
+
 #endif
 #endif
 

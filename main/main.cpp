@@ -1,3 +1,7 @@
+// ============================================================
+// CORREÇÃO COMPLETA - main.cpp (CryptoTest)
+// Medição correta de memória para ESP32C6
+// ============================================================
 #include <stdio.h>
 #include "CryptoAPI.h"
 #include "esp_system.h"
@@ -22,7 +26,43 @@ static const char *TAG = "CryptoTest";
 
 CryptoAPI crypto_api;
 
-// Estrutura expandida para medições detalhadas de memória
+// ============================================================
+// ESTRUTURA DE MEDIÇÃO CORRIGIDA
+// ============================================================
+typedef struct {
+    size_t heap_before;
+    size_t heap_after;
+    size_t heap_delta;  // Alocação líquida nesta fase
+    int64_t time_start;
+    int64_t time_end;
+} MemoryMeasurement;
+
+// Função para iniciar medição
+static inline void start_measurement(MemoryMeasurement* m) {
+    heap_caps_check_integrity_all(true);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    m->heap_before = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    m->time_start = esp_timer_get_time();
+}
+
+// Função para finalizar medição
+static inline void end_measurement(MemoryMeasurement* m) {
+    m->time_end = esp_timer_get_time();
+    
+    heap_caps_check_integrity_all(true);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    m->heap_after = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    
+    // Delta de heap (pode ser 0 se houver reutilização)
+    m->heap_delta = (m->heap_before > m->heap_after) ? 
+                    (m->heap_before - m->heap_after) : 0;
+}
+
+// ============================================================
+// ESTRUTURAS DE MÉTRICAS
+// ============================================================
 typedef struct {
     // Métricas de geração de chaves
     struct {
@@ -32,7 +72,7 @@ typedef struct {
         size_t heap_used;
     } key_generation[NUM_KEY_GENERATIONS];
     
-    // Métricas detalhadas de memória para operações cripto
+    // Métricas detalhadas de memória
     struct {
         size_t heap_base;           // Heap antes de qualquer operação
         size_t heap_after_init;     // Heap após init
@@ -40,19 +80,20 @@ typedef struct {
         size_t heap_after_first_sign;   // Heap após primeira assinatura
         size_t heap_after_first_verify; // Heap após primeira verificação
         
-        size_t memory_init;         // Memória usada pelo init
-        size_t memory_keygen;       // Memória usada pela chave
-        size_t memory_first_sign;   // Memória da primeira assinatura (setup cost)
-        size_t memory_first_verify; // Memória da primeira verificação
-        size_t memory_incremental_sign;   // Memória das assinaturas subsequentes
-        size_t memory_incremental_verify; // Memória das verificações subsequentes
+        size_t memory_init;         // Heap alocado pelo init
+        size_t memory_keygen;       // Heap alocado pela keygen
+        size_t memory_first_sign;   // Heap alocado na primeira sign
+        size_t memory_first_verify; // Heap alocado na primeira verify
+        size_t memory_total;        // Total (heap persistente + stack pico)
+        
+        size_t heap_persistent;     // Heap que ficou alocado
+        size_t stack_peak;          // Stack máximo usado
     } memory_profile;
     
     // Métricas para cada tamanho de string
     struct {
         size_t string_size;
         
-        // Primeira operação (com alocação de buffers)
         struct {
             int64_t time_us;
             size_t heap_used;
@@ -63,16 +104,15 @@ typedef struct {
             size_t heap_used;
         } first_verification;
         
-        // Operações subsequentes (reutilizando buffers)
         struct {
             int64_t time_us;
             size_t heap_used;
-        } subsequent_signatures[NUM_SIGN_TESTS - 1];  // 9 medições
+        } subsequent_signatures[NUM_SIGN_TESTS - 1];
         
         struct {
             int64_t time_us;
             size_t heap_used;
-        } subsequent_verifications[NUM_VERIFY_TESTS - 1];  // 9 medições
+        } subsequent_verifications[NUM_VERIFY_TESTS - 1];
         
     } string_tests[NUM_TEST_STRINGS];
     
@@ -87,86 +127,185 @@ typedef struct {
     TestMetrics metrics;
 } TestConfig;
 
-// Configurações de teste
-// Para benchmark completo mas prático
+// ============================================================
+// CONFIGURAÇÕES DE TESTE
+// ============================================================
 TestConfig test_configs[] = {
+
+    // MBEDTLS
     // RSA básico
-    // {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_256, 2048, "MBEDTLS_RSA_2048_SHA256"},
+    //foi{Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_256, 2048, "MBEDTLS_RSA_2048_SHA256"},
+    //foi {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_512, 2048, "MBEDTLS_RSA_2048_SHA512"},
+    //foi {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_256, 4096, "MBEDTLS_RSA_4096_SHA256"},
+//     {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_512, 4096, "MBEDTLS_RSA_4096_SHA512"},
+
+//    // ============ ECDSA P-256 (secp256r1) ============
+//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_P256_SHA256"},
+//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_P256_SHA512"},
     
+//     // // ============ ECDSA P-521 (secp521r1) ============
+//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_P521_SHA256"},
+//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_P521_SHA512"},
+    
+//     // // ============ BRAINPOOL CURVES ============
+//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_BP256_SHA256"},
+//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_BP256_SHA512"},
+//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_BP512_SHA256"},
+//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_BP512_SHA512"},
+
+    // WOLFSSL
+    // RSA básico
+    //{Libraries::WOLFSSL_LIB, Algorithms::RSA, Hashes::MY_SHA_256, 2048, "WOLFSSL_LIB_RSA_2048_SHA256"},
+    //{Libraries::WOLFSSL_LIB, Algorithms::RSA, Hashes::MY_SHA_512, 2048, "WOLFSSL_LIB_RSA_2048_SHA512"},
+
    // ============ ECDSA P-256 (secp256r1) ============
-    //{Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_P256_SHA256"},
-    //{Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_P256_SHA512"},
+    //{Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_P256_SHA256"},
+    //foi {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_P256_SHA512"},
     
-    // // ============ ECDSA P-521 (secp521r1) ============
-    // {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_P521_SHA256"},
-    // {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_P521_SHA512"},
+    // // // ============ ECDSA P-521 (secp521r1) ============
+    // {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_P521_SHA256"},
+    // {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_P521_SHA512"},
     
-    // // ============ BRAINPOOL CURVES ============
-    // {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_BP256_SHA256"},
-    // {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_BP256_SHA512"},
-    // {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_BP512_SHA256"},
-    // {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_BP512_SHA512"},
+    // // // ============ BRAINPOOL CURVES ============
+    // {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_BP256_SHA256"},
+    // {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_BP256_SHA512"},
+    // {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_BP512_SHA256"},
+    // {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_BP512_SHA512"},
+    
+    //{Libraries::WOLFSSL_LIB, Algorithms::EDDSA_25519, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_EDDSA_25519"},
+    // {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_25519, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_EDDSA_25519_SHA_512"},
+    // {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_448, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_EDDSA_448_SHA_256"},
+    {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_448, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_EDDSA_448_MY_SHA_512"},
+    // MICROECC
+    // ============ ECDSA P-256 (secp256r1) ============
+    // {Libraries::MICROECC_LIB, Algorithms::ECDSA_SECP256R1 , Hashes::MY_SHA_256, 0, "MICROECC_LIB_ECDSA_P256_SHA256"},
+    // {Libraries::MICROECC_LIB, Algorithms::ECDSA_SECP256R1 , Hashes::MY_SHA_512, 0, "MICROECC_LIB_ECDSA_P256_SHA512"},
+
+
 };
 
-// Função auxiliar para estabilizar heap (simplificada)
+// ============================================================
+// FUNÇÃO AUXILIAR
+// ============================================================
 void heap_stabilize() {
-    vTaskDelay(pdMS_TO_TICKS(10));
+    heap_caps_check_integrity_all(true);
+    vTaskDelay(pdMS_TO_TICKS(50));
 }
 
-// Função para executar medições detalhadas de memória
+// ============================================================
+// PERFIL DE MEMÓRIA CORRIGIDO
+// ============================================================
 void execute_memory_profiling(TestConfig* config) {
     TestMetrics* metrics = &config->metrics;
+    memset(&metrics->memory_profile, 0, sizeof(metrics->memory_profile));
+    MemoryMeasurement m;
     
-    // ========== PERFIL DE MEMÓRIA INICIAL ==========
+    ESP_LOGI(TAG, "\n=== PROFILING DE MEMÓRIA: %s ===", config->name);
+    
+    // ========== BASELINE ==========
     heap_stabilize();
-    metrics->memory_profile.heap_base = esp_get_free_heap_size();
+    size_t heap_baseline = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    UBaseType_t stack_hwm_initial = uxTaskGetStackHighWaterMark(NULL);
     
-    // Inicializar biblioteca
+    metrics->memory_profile.heap_base = heap_baseline;
+    
+    ESP_LOGI(TAG, "Baseline - Heap livre: %zu bytes, Stack HWM inicial: %u words (%u bytes)",
+             heap_baseline, stack_hwm_initial, stack_hwm_initial * 4);
+    
+    // ========== INIT ==========
+    start_measurement(&m);
     crypto_api.init(config->lib, config->algo, config->hash, 0);
-    heap_stabilize();
-    metrics->memory_profile.heap_after_init = esp_get_free_heap_size();
-    metrics->memory_profile.memory_init = 
-        metrics->memory_profile.heap_base - metrics->memory_profile.heap_after_init;
+    end_measurement(&m);
     
-    // Gerar uma chave para análise de memória
+    metrics->memory_profile.heap_after_init = m.heap_after;
+    metrics->memory_profile.memory_init = m.heap_delta;
+    
+    ESP_LOGI(TAG, "Init - Heap alocado: %zu bytes", m.heap_delta);
+    
+    // ========== KEYGEN ==========
+    start_measurement(&m);
     if (config->algo == Algorithms::RSA) {
         crypto_api.gen_rsa_keys(config->rsa_key_size, MY_RSA_EXPONENT);
     } else {
         crypto_api.gen_keys();
     }
-    heap_stabilize();
-    metrics->memory_profile.heap_after_keygen = esp_get_free_heap_size();
-    metrics->memory_profile.memory_keygen = 
-        metrics->memory_profile.heap_after_init - metrics->memory_profile.heap_after_keygen;
+    end_measurement(&m);
     
-    // Testar primeira assinatura (aloca buffers internos)
+    metrics->memory_profile.heap_after_keygen = m.heap_after;
+    metrics->memory_profile.memory_keygen = m.heap_delta;
+    
+    ESP_LOGI(TAG, "KeyGen - Heap alocado: %zu bytes", m.heap_delta);
+    
+    // ========== PRIMEIRA ASSINATURA ==========
     static const unsigned char test_msg[] = "Memory profiling test";
     size_t test_msg_len = sizeof(test_msg) - 1;
-    size_t sig_size = crypto_api.get_signature_size();
-    unsigned char test_signature[512];  // Buffer estático para assinatura
-    size_t test_sig_len = sig_size;
-
-    crypto_api.sign(test_msg, test_msg_len, test_signature, &test_sig_len);
-    heap_stabilize();
-    metrics->memory_profile.heap_after_first_sign = esp_get_free_heap_size();
-    metrics->memory_profile.memory_first_sign =
-        metrics->memory_profile.heap_after_keygen - metrics->memory_profile.heap_after_first_sign;
-
-    // Testar primeira verificação
-    crypto_api.verify(test_msg, test_msg_len, test_signature, test_sig_len);
-    heap_stabilize();
-    metrics->memory_profile.heap_after_first_verify = esp_get_free_heap_size();
-    metrics->memory_profile.memory_first_verify =
-        metrics->memory_profile.heap_after_first_sign - metrics->memory_profile.heap_after_first_verify;
-
-    // Limpar para próximas medições
+    unsigned char test_signature[512];
+    memset(test_signature, 0, sizeof(test_signature));
+    size_t test_sig_len = sizeof(test_signature);
+    
+    start_measurement(&m);
+    int ret = crypto_api.sign(test_msg, test_msg_len, test_signature, &test_sig_len);
+    end_measurement(&m);
+    
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Sign failed: %d", ret);
+    }
+    
+    metrics->memory_profile.heap_after_first_sign = m.heap_after;
+    metrics->memory_profile.memory_first_sign = m.heap_delta;
+    
+    ESP_LOGI(TAG, "Sign - Heap alocado: %zu bytes", m.heap_delta);
+    
+    // ========== PRIMEIRA VERIFICAÇÃO ==========
+    start_measurement(&m);
+    ret = crypto_api.verify(test_msg, test_msg_len, test_signature, test_sig_len);
+    end_measurement(&m);
+    
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Verify failed: %d", ret);
+    }
+    
+    metrics->memory_profile.heap_after_first_verify = m.heap_after;
+    metrics->memory_profile.memory_first_verify = m.heap_delta;
+    
+    ESP_LOGI(TAG, "Verify - Heap alocado: %zu bytes", m.heap_delta);
+    
+    // ========== CALCULAR FOOTPRINT TOTAL ==========
+    size_t heap_final = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    metrics->memory_profile.heap_persistent = (heap_baseline > heap_final) ? 
+                                              (heap_baseline - heap_final) : 0;
+    
+    // Stack: diferença de HWM (menor HWM = mais stack usado)
+    UBaseType_t stack_hwm_final = uxTaskGetStackHighWaterMark(NULL);
+    metrics->memory_profile.stack_peak = (stack_hwm_initial > stack_hwm_final) ? 
+                                         (stack_hwm_initial - stack_hwm_final) * 4 : 0;
+    
+    metrics->memory_profile.memory_total = metrics->memory_profile.heap_persistent + 
+                                          metrics->memory_profile.stack_peak;
+    
+    // ========== RESULTADO FINAL ==========
+    ESP_LOGI(TAG, "\n=== RESULTADO FINAL ===");
+    ESP_LOGI(TAG, "FOOTPRINT DE MEMÓRIA:");
+    ESP_LOGI(TAG, "  Heap persistente:  %zu bytes", metrics->memory_profile.heap_persistent);
+    ESP_LOGI(TAG, "  Stack pico usado:  %zu bytes", metrics->memory_profile.stack_peak);
+    ESP_LOGI(TAG, "  TOTAL:             %zu bytes", metrics->memory_profile.memory_total);
+    ESP_LOGI(TAG, "\nDETALHAMENTO POR FASE (heap delta):");
+    ESP_LOGI(TAG, "  Init:   %zu bytes", metrics->memory_profile.memory_init);
+    ESP_LOGI(TAG, "  KeyGen: %zu bytes", metrics->memory_profile.memory_keygen);
+    ESP_LOGI(TAG, "  Sign:   %zu bytes", metrics->memory_profile.memory_first_sign);
+    ESP_LOGI(TAG, "  Verify: %zu bytes", metrics->memory_profile.memory_first_verify);
+    
+    // Limpar
     crypto_api.close();
     heap_stabilize();
 }
 
-// Função para executar testes sem logs
+// ============================================================
+// MEDIÇÕES SILENCIOSAS (sem mudanças significativas)
+// ============================================================
 void execute_silent_measurements(TestConfig* config) {
     TestMetrics* metrics = &config->metrics;
+    MemoryMeasurement m;
     
     // ========== FASE 1: GERAÇÃO DE CHAVES (10x) ==========
     for (int k = 0; k < NUM_KEY_GENERATIONS; k++) {
@@ -175,9 +314,7 @@ void execute_silent_measurements(TestConfig* config) {
             heap_stabilize();
         }
         
-        metrics->key_generation[k].heap_start = esp_get_free_heap_size();
-        
-        int64_t start_time = esp_timer_get_time();
+        start_measurement(&m);
         
         int ret = crypto_api.init(config->lib, config->algo, config->hash, 0);
         if (ret == 0) {
@@ -188,17 +325,15 @@ void execute_silent_measurements(TestConfig* config) {
             }
         }
         
-        int64_t end_time = esp_timer_get_time();
+        end_measurement(&m);
         
-        metrics->key_generation[k].heap_end = esp_get_free_heap_size();
-        metrics->key_generation[k].time_us = end_time - start_time;
-        metrics->key_generation[k].heap_used = 
-            metrics->key_generation[k].heap_start - metrics->key_generation[k].heap_end;
+        metrics->key_generation[k].time_us = m.time_end - m.time_start;
+        metrics->key_generation[k].heap_start = m.heap_before;
+        metrics->key_generation[k].heap_end = m.heap_after;
+        metrics->key_generation[k].heap_used = m.heap_delta;
     }
     
-    // Última chave permanece carregada
-    
-    // ========== FASE 2: ASSINATURA E VERIFICAÇÃO COM ANÁLISE DE MEMÓRIA ==========
+    // ========== FASE 2: ASSINATURA E VERIFICAÇÃO ==========
     for (int s = 0; s < NUM_TEST_STRINGS; s++) {
         const unsigned char* msg = (const unsigned char*)test_strings[s];
         size_t msg_len = test_string_sizes[s];
@@ -207,71 +342,62 @@ void execute_silent_measurements(TestConfig* config) {
         
         size_t sig_size = crypto_api.get_signature_size();
         unsigned char* signature = (unsigned char*)malloc(sig_size);
-        size_t sig_len = sig_size;  // Variável para armazenar o tamanho real da assinatura
-
         if (signature == NULL) {
-            for (int i = 0; i < NUM_SIGN_TESTS; i++) {
-                if (i == 0) {
-                    metrics->string_tests[s].first_signature.time_us = -1;
-                    metrics->string_tests[s].first_signature.heap_used = 0;
-                } else {
-                    metrics->string_tests[s].subsequent_signatures[i-1].time_us = -1;
-                    metrics->string_tests[s].subsequent_signatures[i-1].heap_used = 0;
-                }
-            }
+            ESP_LOGE(TAG, "Failed to allocate signature buffer");
             continue;
         }
-
-        // === ASSINATURAS: Primeira vs Subsequentes ===
+        memset(signature, 0, sig_size);
+        size_t sig_len = sig_size;
+        
+        // === ASSINATURAS ===
         for (int i = 0; i < NUM_SIGN_TESTS; i++) {
-            sig_len = sig_size;  // Resetar para cada iteração
-            size_t heap_before = esp_get_free_heap_size();
-
-            int64_t start_time = esp_timer_get_time();
-            crypto_api.sign(msg, msg_len, signature, &sig_len);
-            int64_t end_time = esp_timer_get_time();
-
-            size_t heap_after = esp_get_free_heap_size();
-
+            sig_len = sig_size;
+            
+            start_measurement(&m);
+            int ret = crypto_api.sign(msg, msg_len, signature, &sig_len);
+            end_measurement(&m);
+            
+            if (ret != 0) {
+                ESP_LOGE(TAG, "Sign failed: %d", ret);
+            }
+            
             if (i == 0) {
-                // Primeira assinatura (pode alocar buffers internos)
-                metrics->string_tests[s].first_signature.time_us = end_time - start_time;
-                metrics->string_tests[s].first_signature.heap_used = heap_before - heap_after;
+                metrics->string_tests[s].first_signature.time_us = m.time_end - m.time_start;
+                metrics->string_tests[s].first_signature.heap_used = m.heap_delta;
             } else {
-                // Assinaturas subsequentes (reutilizam buffers)
-                metrics->string_tests[s].subsequent_signatures[i-1].time_us = end_time - start_time;
-                metrics->string_tests[s].subsequent_signatures[i-1].heap_used = heap_before - heap_after;
+                metrics->string_tests[s].subsequent_signatures[i-1].time_us = m.time_end - m.time_start;
+                metrics->string_tests[s].subsequent_signatures[i-1].heap_used = m.heap_delta;
             }
         }
-
-        // === VERIFICAÇÕES: Primeira vs Subsequentes ===
+        
+        // === VERIFICAÇÕES ===
         for (int i = 0; i < NUM_VERIFY_TESTS; i++) {
-            size_t heap_before = esp_get_free_heap_size();
-
-            int64_t start_time = esp_timer_get_time();
-            crypto_api.verify(msg, msg_len, signature, sig_len);  // Usar sig_len real
-            int64_t end_time = esp_timer_get_time();
-
-            size_t heap_after = esp_get_free_heap_size();
-
+            start_measurement(&m);
+            int ret = crypto_api.verify(msg, msg_len, signature, sig_len);
+            end_measurement(&m);
+            
+            if (ret != 0) {
+                ESP_LOGE(TAG, "Verify failed: %d", ret);
+            }
+            
             if (i == 0) {
-                // Primeira verificação
-                metrics->string_tests[s].first_verification.time_us = end_time - start_time;
-                metrics->string_tests[s].first_verification.heap_used = heap_before - heap_after;
+                metrics->string_tests[s].first_verification.time_us = m.time_end - m.time_start;
+                metrics->string_tests[s].first_verification.heap_used = m.heap_delta;
             } else {
-                // Verificações subsequentes
-                metrics->string_tests[s].subsequent_verifications[i-1].time_us = end_time - start_time;
-                metrics->string_tests[s].subsequent_verifications[i-1].heap_used = heap_before - heap_after;
+                metrics->string_tests[s].subsequent_verifications[i-1].time_us = m.time_end - m.time_start;
+                metrics->string_tests[s].subsequent_verifications[i-1].heap_used = m.heap_delta;
             }
         }
-
+        
         free(signature);
     }
     
     crypto_api.close();
 }
 
-// Função para calcular estatísticas
+// ============================================================
+// FUNÇÕES DE ESTATÍSTICAS
+// ============================================================
 typedef struct {
     int64_t min;
     int64_t max;
@@ -283,34 +409,35 @@ typedef struct {
 TimeStats calculate_stats(int64_t* values, int count) {
     TimeStats stats = {0};
     if (count == 0) return stats;
-
+    
     stats.min = values[0];
     stats.max = values[0];
     int64_t sum = 0;
-
-    // Single pass para min, max e soma
+    
     for (int i = 0; i < count; i++) {
         int64_t val = values[i];
         if (val < stats.min) stats.min = val;
         if (val > stats.max) stats.max = val;
         sum += val;
     }
+    
     stats.avg = sum / count;
-
-    // Calcular desvio padrão em um único loop
+    
     int64_t variance_sum = 0;
     for (int i = 0; i < count; i++) {
         int64_t diff = values[i] - stats.avg;
         variance_sum += diff * diff;
     }
     stats.std_dev = (int64_t)sqrt((double)(variance_sum / count));
-
+    
     stats.median = values[count / 2];
-
+    
     return stats;
 }
 
-// Função para imprimir resultados detalhados
+// ============================================================
+// IMPRESSÃO DE RESULTADOS
+// ============================================================
 void print_all_results() {
     int num_configs = sizeof(test_configs) / sizeof(TestConfig);
     
@@ -318,148 +445,88 @@ void print_all_results() {
     ESP_LOGI(TAG, "=======================================================");
     ESP_LOGI(TAG, "         RESULTADOS COMPLETOS - ANÁLISE DETALHADA     ");
     ESP_LOGI(TAG, "=======================================================");
-    ESP_LOGI(TAG, "Heap livre atual: %lu bytes", esp_get_free_heap_size());
-    ESP_LOGI(TAG, "");
     
     for (int cfg = 0; cfg < num_configs; cfg++) {
         TestConfig* config = &test_configs[cfg];
         TestMetrics* metrics = &config->metrics;
         
-        ESP_LOGI(TAG, "=======================================================");
+        ESP_LOGI(TAG, "\n=======================================================");
         ESP_LOGI(TAG, "Configuração: %s", config->name);
         ESP_LOGI(TAG, "=======================================================");
         
         // === PERFIL DE MEMÓRIA ===
         ESP_LOGI(TAG, "\n--- PERFIL DE MEMÓRIA ---");
-        ESP_LOGI(TAG, "Análise de alocação de memória:");
-        ESP_LOGI(TAG, "  Heap base inicial:         %d bytes", metrics->memory_profile.heap_base);
-        ESP_LOGI(TAG, "  Memória para init():       %d bytes", metrics->memory_profile.memory_init);
-        ESP_LOGI(TAG, "  Memória para chave:        %d bytes", metrics->memory_profile.memory_keygen);
-        ESP_LOGI(TAG, "  Memória 1ª assinatura:     %d bytes (setup cost)", 
+        ESP_LOGI(TAG, "Footprint Total:          %zu bytes", 
+                 metrics->memory_profile.memory_total);
+        ESP_LOGI(TAG, "  - Heap persistente:     %zu bytes", 
+                 metrics->memory_profile.heap_persistent);
+        ESP_LOGI(TAG, "  - Stack pico:           %zu bytes", 
+                 metrics->memory_profile.stack_peak);
+        ESP_LOGI(TAG, "\nDetalhamento Heap por fase:");
+        ESP_LOGI(TAG, "  - Init:                 %zu bytes", 
+                 metrics->memory_profile.memory_init);
+        ESP_LOGI(TAG, "  - KeyGen:               %zu bytes", 
+                 metrics->memory_profile.memory_keygen);
+        ESP_LOGI(TAG, "  - 1ª Sign:              %zu bytes", 
                  metrics->memory_profile.memory_first_sign);
-        ESP_LOGI(TAG, "  Memória 1ª verificação:    %d bytes", 
-                 metrics->memory_profile.memory_first_verify);
-        ESP_LOGI(TAG, "  TOTAL em uso:              %d bytes", 
-                 metrics->memory_profile.memory_init + 
-                 metrics->memory_profile.memory_keygen + 
-                 metrics->memory_profile.memory_first_sign +
+        ESP_LOGI(TAG, "  - 1ª Verify:            %zu bytes", 
                  metrics->memory_profile.memory_first_verify);
         
-
         // === GERAÇÃO DE CHAVES ===
-        ESP_LOGI(TAG, "\n--- GERAÇÃO DE CHAVES (10 gerações independentes) ---");
-
+        ESP_LOGI(TAG, "\n--- GERAÇÃO DE CHAVES ---");
         int64_t key_times[NUM_KEY_GENERATIONS];
         for (int i = 0; i < NUM_KEY_GENERATIONS; i++) {
             key_times[i] = metrics->key_generation[i].time_us;
         }
-
         TimeStats key_stats = calculate_stats(key_times, NUM_KEY_GENERATIONS);
-
-        ESP_LOGI(TAG, "Estatísticas de Tempo:");
+        
+        ESP_LOGI(TAG, "Estatísticas:");
+        ESP_LOGI(TAG, "  Avg: %.2f ms", key_stats.avg / 1000.0);
         ESP_LOGI(TAG, "  Min: %.2f ms", key_stats.min / 1000.0);
         ESP_LOGI(TAG, "  Max: %.2f ms", key_stats.max / 1000.0);
-        ESP_LOGI(TAG, "  Avg: %.2f ms", key_stats.avg / 1000.0);
         ESP_LOGI(TAG, "  Std: %.2f ms", key_stats.std_dev / 1000.0);
-        ESP_LOGI(TAG, "  CV:  %.1f%%", (key_stats.std_dev * 100.0) / key_stats.avg);
         
-        // === ASSINATURA E VERIFICAÇÃO POR TAMANHO ===
-        ESP_LOGI(TAG, "\n--- ASSINATURA E VERIFICAÇÃO ---");
-        ESP_LOGI(TAG, "Análise: Primeira operação vs Operações subsequentes\n");
+        // === FORMATO CSV ===
+        ESP_LOGI(TAG, "\n--- CSV DATA ---");
+        ESP_LOGI(TAG, "Config,Operation,StringSize,Type,Iteration,Time_us,HeapDelta");
         
-        for (int s = 0; s < NUM_TEST_STRINGS; s++) {
-            ESP_LOGI(TAG, ">>> Mensagem de %d bytes <<<", 
-                     metrics->string_tests[s].string_size);
-            
-            // ASSINATURA - Análise detalhada
-            ESP_LOGI(TAG, "ASSINATURA:");
-            ESP_LOGI(TAG, "  Primeira (com alocação):");
-            ESP_LOGI(TAG, "    Tempo: %.2f ms", 
-                     metrics->string_tests[s].first_signature.time_us / 1000.0);
-            ESP_LOGI(TAG, "    Heap:  %d bytes", 
-                     metrics->string_tests[s].first_signature.heap_used);
-            
-            // Estatísticas das operações subsequentes
-            int64_t sub_sign_times[NUM_SIGN_TESTS - 1];
-            size_t total_incremental_heap = 0;
-            for (int i = 0; i < NUM_SIGN_TESTS - 1; i++) {
-                sub_sign_times[i] = metrics->string_tests[s].subsequent_signatures[i].time_us;
-                total_incremental_heap += metrics->string_tests[s].subsequent_signatures[i].heap_used;
-            }
-            
-            TimeStats sub_sign_stats = calculate_stats(sub_sign_times, NUM_SIGN_TESTS - 1);
-            
-            ESP_LOGI(TAG, "  Subsequentes (buffers reutilizados):");
-            ESP_LOGI(TAG, "    Tempo médio: %.2f ms", sub_sign_stats.avg / 1000.0);
-            ESP_LOGI(TAG, "    Heap médio:  %d bytes", total_incremental_heap / (NUM_SIGN_TESTS - 1));
-            
-            // VERIFICAÇÃO - Análise detalhada
-            ESP_LOGI(TAG, "VERIFICAÇÃO:");
-            ESP_LOGI(TAG, "  Primeira:");
-            ESP_LOGI(TAG, "    Tempo: %.2f ms", 
-                     metrics->string_tests[s].first_verification.time_us / 1000.0);
-            ESP_LOGI(TAG, "    Heap:  %d bytes", 
-                     metrics->string_tests[s].first_verification.heap_used);
-            
-            // Estatísticas das operações subsequentes
-            int64_t sub_verify_times[NUM_VERIFY_TESTS - 1];
-            total_incremental_heap = 0;
-            for (int i = 0; i < NUM_VERIFY_TESTS - 1; i++) {
-                sub_verify_times[i] = metrics->string_tests[s].subsequent_verifications[i].time_us;
-                total_incremental_heap += metrics->string_tests[s].subsequent_verifications[i].heap_used;
-            }
-            
-            TimeStats sub_verify_stats = calculate_stats(sub_verify_times, NUM_VERIFY_TESTS - 1);
-            
-            ESP_LOGI(TAG, "  Subsequentes:");
-            ESP_LOGI(TAG, "    Tempo médio: %.2f ms", sub_verify_stats.avg / 1000.0);
-            ESP_LOGI(TAG, "    Heap médio:  %d bytes", total_incremental_heap / (NUM_VERIFY_TESTS - 1));
-            
-            ESP_LOGI(TAG, "");
-        }
-
-        // === FORMATO CSV DETALHADO ===
-        ESP_LOGI(TAG, "\n--- DADOS EM CSV (FORMATO DETALHADO) ---");
-        ESP_LOGI(TAG, "Config,Operation,StringSize,Type,Iteration,Time_us,HeapUsed");
-
         // Key generation
         for (int i = 0; i < NUM_KEY_GENERATIONS; i++) {
-            ESP_LOGI(TAG, "%s,KeyGen,0,Full,%d,%lld,%d",
-                     config->name,
-                     i,
+            ESP_LOGI(TAG, "%s,KeyGen,0,Full,%d,%lld,%zu",
+                     config->name, i,
                      metrics->key_generation[i].time_us,
                      metrics->key_generation[i].heap_used);
         }
-
-        // Sign/Verify com distinção primeira vs subsequentes
+        
+        // Sign/Verify por tamanho de string
         for (int s = 0; s < NUM_TEST_STRINGS; s++) {
             // Primeira assinatura
-            ESP_LOGI(TAG, "%s,Sign,%d,First,0,%lld,%d",
+            ESP_LOGI(TAG, "%s,Sign,%zu,First,0,%lld,%zu",
                      config->name,
                      metrics->string_tests[s].string_size,
                      metrics->string_tests[s].first_signature.time_us,
                      metrics->string_tests[s].first_signature.heap_used);
-
+            
             // Assinaturas subsequentes
             for (int i = 0; i < NUM_SIGN_TESTS - 1; i++) {
-                ESP_LOGI(TAG, "%s,Sign,%d,Subsequent,%d,%lld,%d",
+                ESP_LOGI(TAG, "%s,Sign,%zu,Subsequent,%d,%lld,%zu",
                          config->name,
                          metrics->string_tests[s].string_size,
                          i + 1,
                          metrics->string_tests[s].subsequent_signatures[i].time_us,
                          metrics->string_tests[s].subsequent_signatures[i].heap_used);
             }
-
+            
             // Primeira verificação
-            ESP_LOGI(TAG, "%s,Verify,%d,First,0,%lld,%d",
+            ESP_LOGI(TAG, "%s,Verify,%zu,First,0,%lld,%zu",
                      config->name,
                      metrics->string_tests[s].string_size,
                      metrics->string_tests[s].first_verification.time_us,
                      metrics->string_tests[s].first_verification.heap_used);
-
+            
             // Verificações subsequentes
             for (int i = 0; i < NUM_VERIFY_TESTS - 1; i++) {
-                ESP_LOGI(TAG, "%s,Verify,%d,Subsequent,%d,%lld,%d",
+                ESP_LOGI(TAG, "%s,Verify,%zu,Subsequent,%d,%lld,%zu",
                          config->name,
                          metrics->string_tests[s].string_size,
                          i + 1,
@@ -467,52 +534,6 @@ void print_all_results() {
                          metrics->string_tests[s].subsequent_verifications[i].heap_used);
             }
         }
-
-        ESP_LOGI(TAG, "");
-    }
-    
-    // === RESUMO EXECUTIVO ===
-    ESP_LOGI(TAG, "=======================================================");
-    ESP_LOGI(TAG, "                  RESUMO EXECUTIVO                    ");
-    ESP_LOGI(TAG, "=======================================================");
-    
-    for (int cfg = 0; cfg < num_configs; cfg++) {
-        TestConfig* config = &test_configs[cfg];
-        TestMetrics* metrics = &config->metrics;
-        
-        ESP_LOGI(TAG, "\n%s:", config->name);
-        ESP_LOGI(TAG, "  Memória Total Necessária: %d bytes",
-                 metrics->memory_profile.memory_init + 
-                 metrics->memory_profile.memory_keygen + 
-                 metrics->memory_profile.memory_first_sign);
-        ESP_LOGI(TAG, "  - Setup inicial:     %d bytes", 
-                 metrics->memory_profile.memory_init);
-        ESP_LOGI(TAG, "  - Chave RSA-2048:    %d bytes", 
-                 metrics->memory_profile.memory_keygen);
-        ESP_LOGI(TAG, "  - Buffers operação:  %d bytes", 
-                 metrics->memory_profile.memory_first_sign);
-        ESP_LOGI(TAG, "  Custo incremental:   %d bytes (após setup)", 0);
-        
-        // Calcular tempo médio para operações principais
-        int64_t total_sign_time = 0;
-        int64_t total_verify_time = 0;
-        int count = 0;
-        
-        for (int s = 0; s < NUM_TEST_STRINGS; s++) {
-            for (int i = 0; i < NUM_SIGN_TESTS - 1; i++) {
-                total_sign_time += metrics->string_tests[s].subsequent_signatures[i].time_us;
-                count++;
-            }
-        }
-        
-        for (int s = 0; s < NUM_TEST_STRINGS; s++) {
-            for (int i = 0; i < NUM_VERIFY_TESTS - 1; i++) {
-                total_verify_time += metrics->string_tests[s].subsequent_verifications[i].time_us;
-            }
-        }
-        
-        ESP_LOGI(TAG, "  Tempo médio Sign:    %.2f ms", (total_sign_time / count) / 1000.0);
-        ESP_LOGI(TAG, "  Tempo médio Verify:  %.2f ms", (total_verify_time / count) / 1000.0);
     }
     
     ESP_LOGI(TAG, "\n=======================================================");
@@ -520,49 +541,57 @@ void print_all_results() {
     ESP_LOGI(TAG, "=======================================================");
 }
 
-// Função principal de testes
+// ============================================================
+// EXECUÇÃO COMPLETA DOS TESTES
+// ============================================================
 void perform_complete_tests() {
     int num_configs = sizeof(test_configs) / sizeof(TestConfig);
     
     #define LED_PIN GPIO_NUM_8
     gpio_set_direction(LED_PIN, GPIO_MODE_OUTPUT);
     
-    // ========== FASE 1: PERFIL DE MEMÓRIA ==========
+    // FASE 1: PERFIL DE MEMÓRIA
+    ESP_LOGI(TAG, "\n>>> FASE 1: PROFILING DE MEMÓRIA <<<\n");
     for (int cfg = 0; cfg < num_configs; cfg++) {
         gpio_set_level(LED_PIN, 1);
         execute_memory_profiling(&test_configs[cfg]);
         gpio_set_level(LED_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-
-    // ========== FASE 2: MEDIÇÕES COMPLETAS EM SILÊNCIO ==========
+    
+    // FASE 2: MEDIÇÕES DE PERFORMANCE
+    ESP_LOGI(TAG, "\n>>> FASE 2: MEDIÇÕES DE PERFORMANCE <<<\n");
     for (int cfg = 0; cfg < num_configs; cfg++) {
         gpio_set_level(LED_PIN, cfg % 2);
         execute_silent_measurements(&test_configs[cfg]);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-
+    
     gpio_set_level(LED_PIN, 0);
-
-    // ========== FASE 3: APRESENTAÇÃO DOS RESULTADOS ==========
+    
+    // FASE 3: IMPRESSÃO DE RESULTADOS
     vTaskDelay(pdMS_TO_TICKS(1000));
     print_all_results();
 }
 
+// ============================================================
+// MAIN
+// ============================================================
 extern "C" void app_main(void) {
     esp_task_wdt_deinit();
     
-    ESP_LOGI(TAG, "=== ESP32C6 Crypto Benchmark v2.0 ===");
-    ESP_LOGI(TAG, "Análise detalhada: Setup Cost vs Operational Cost");
-    ESP_LOGI(TAG, "Heap inicial: %lu bytes", esp_get_free_heap_size());
+    ESP_LOGI(TAG, "\n=======================================================");
+    ESP_LOGI(TAG, "  ESP32C6 Crypto Benchmark v2.2 - MEMORY CORRECTED    ");
+    ESP_LOGI(TAG, "=======================================================");
+    ESP_LOGI(TAG, "Heap inicial: %lu bytes", heap_caps_get_free_size(MALLOC_CAP_8BIT));
     ESP_LOGI(TAG, "Iniciando em 5 segundos...");
     
     vTaskDelay(pdMS_TO_TICKS(5000));
     
     perform_complete_tests();
     
-    ESP_LOGI(TAG, "*** BENCHMARK FINALIZADO ***");
-    ESP_LOGI(TAG, "Heap final: %lu bytes", esp_get_free_heap_size());
+    ESP_LOGI(TAG, "\n*** BENCHMARK FINALIZADO ***");
+    ESP_LOGI(TAG, "Heap final: %lu bytes", heap_caps_get_free_size(MALLOC_CAP_8BIT));
     
     while(1) {
         vTaskDelay(pdMS_TO_TICKS(10000));

@@ -2,44 +2,41 @@
 #include <esp_task_wdt.h>
 
 static const char *TAG = "WolfsslModule";
-
+// ============================================================
+// CORREÇÕES PARA WolfsslModule.cpp
+// ============================================================
+// Substitua as funções init(), gen_keys(), sign() e verify()
 WolfsslModule::WolfsslModule(CryptoApiCommons &commons) : commons(commons) {}
 
 int WolfsslModule::init(Algorithms algorithm, Hashes hash, size_t length_of_shake256)
 {
-  int initial_memory = esp_get_minimum_free_heap_size();
-  unsigned long start_time = esp_timer_get_time() / 1000;
-
   commons.set_chosen_algorithm(algorithm);
   commons.set_chosen_hash(hash);
   commons.set_shake256_hash_length(length_of_shake256);
 
   wolfCrypt_Init();
 
-  rng = (WC_RNG *)malloc(sizeof(WC_RNG));
-  int ret = wc_InitRng(rng);
+  memset(&rng, 0, sizeof(WC_RNG));
+  memset(&wolf_ed25519_key, 0, sizeof(ed25519_key));
+  memset(&wolf_rsa_key, 0, sizeof(RsaKey));
+  memset(&wolf_ecc_key, 0, sizeof(ecc_key));
+  memset(&wolf_ed448_key, 0, sizeof(ed448_key));
+
+  int ret = wc_InitRng(&rng);
   if (ret != 0)
   {
     commons.log_error("wc_InitRng");
     return ret;
   }
 
-  unsigned long end_time = esp_timer_get_time() / 1000;
-  int final_memory = esp_get_minimum_free_heap_size();
-
-  // commons.print_elapsed_time(start_time, end_time, "init rng");
-  // commons.print_used_memory(initial_memory, final_memory, "init rng");
-
-  heap_caps_monitor_local_minimum_free_size_start();
-  initial_memory = esp_get_minimum_free_heap_size();
-  start_time = esp_timer_get_time() / 1000;
-  size_t cycle_count_before = esp_cpu_get_cycle_count();
+  // CORREÇÃO: Remover medição de memória do init
+  // Não medir memória aqui - será medido no main
+  unsigned long start_time = esp_timer_get_time() / 1000;
 
   switch (commons.get_chosen_algorithm())
   {
   case EDDSA_25519:
-    wolf_ed25519_key = (ed25519_key *)malloc(sizeof(ed25519_key));
-    ret = wc_ed25519_init(wolf_ed25519_key);
+    ret = wc_ed25519_init(&wolf_ed25519_key);
     if (ret != 0)
     {
       commons.log_error("wc_ed25519_init");
@@ -47,8 +44,7 @@ int WolfsslModule::init(Algorithms algorithm, Hashes hash, size_t length_of_shak
     }
     break;
   case RSA:
-    wolf_rsa_key = (RsaKey *)malloc(sizeof(RsaKey));
-    ret = wc_InitRsaKey(wolf_rsa_key, NULL);
+    ret = wc_InitRsaKey(&wolf_rsa_key, NULL);
     if (ret != 0)
     {
       commons.log_error("wc_InitRsaKey");
@@ -59,8 +55,7 @@ int WolfsslModule::init(Algorithms algorithm, Hashes hash, size_t length_of_shak
   case ECDSA_BP512R1:
   case ECDSA_SECP256R1:
   case ECDSA_SECP521R1:
-    wolf_ecc_key = (ecc_key *)malloc(sizeof(ecc_key));
-    ret = wc_ecc_init(wolf_ecc_key);
+    ret = wc_ecc_init(&wolf_ecc_key);
     if (ret != 0)
     {
       commons.log_error("wc_ecc_init");
@@ -68,8 +63,7 @@ int WolfsslModule::init(Algorithms algorithm, Hashes hash, size_t length_of_shak
     }
     break;
   case EDDSA_448:
-    wolf_ed448_key = (ed448_key *)malloc(sizeof(ed448_key));
-    ret = wc_ed448_init(wolf_ed448_key);
+    ret = wc_ed448_init(&wolf_ed448_key);
     if (ret != 0)
     {
       commons.log_error("wc_ed448_init");
@@ -78,14 +72,9 @@ int WolfsslModule::init(Algorithms algorithm, Hashes hash, size_t length_of_shak
     break;
   }
 
-  end_time = esp_timer_get_time() / 1000;
-  final_memory = esp_get_minimum_free_heap_size();
-  size_t cycle_count_after = esp_cpu_get_cycle_count();
-  heap_caps_monitor_local_minimum_free_size_stop();
-
-  // commons.print_elapsed_time(start_time, end_time, "init key");
-  // commons.print_used_memory(initial_memory, final_memory, "init key");
-  // commons.print_total_cycles(cycle_count_before, cycle_count_after, "init key");
+  unsigned long end_time = esp_timer_get_time() / 1000;
+  // Apenas log de tempo, não memória
+  ESP_LOGI(TAG, "wolfssl_init completed in %lu ms", end_time - start_time);
 
   commons.log_success("init");
   return 0;
@@ -97,20 +86,24 @@ int WolfsslModule::gen_keys()
   int curve_id = get_ecc_curve_id();
   int key_size = get_key_size(curve_id);
 
-  heap_caps_monitor_local_minimum_free_size_start();
-  int initial_memory = esp_get_minimum_free_heap_size();
+  // CORREÇÃO: Remover medição de memória
   unsigned long start_time = esp_timer_get_time() / 1000;
-  size_t cycle_count_before = esp_cpu_get_cycle_count();
 
   switch (commons.get_chosen_algorithm())
   {
   case EDDSA_25519:
-    esp_task_wdt_reset();
-    ret = wc_ed25519_make_key(rng, key_size, wolf_ed25519_key);
-    esp_task_wdt_reset();
+    ret = wc_ed25519_make_key(&rng, key_size, &wolf_ed25519_key);
     if (ret != 0)
     {
       commons.log_error("wc_ed25519_make_key");
+      return ret;
+    }
+    break;
+  case EDDSA_448:
+    ret = wc_ed448_make_key(&rng, key_size, &wolf_ed448_key);
+    if (ret != 0)
+    {
+      commons.log_error("wc_ed448_make_key");
       return ret;
     }
     break;
@@ -119,35 +112,17 @@ int WolfsslModule::gen_keys()
   case ECDSA_SECP256R1:
   case ECDSA_SECP521R1:
   default:
-    esp_task_wdt_reset();
-    ret = wc_ecc_make_key_ex(rng, key_size, wolf_ecc_key, curve_id);
-    esp_task_wdt_reset();
+    ret = wc_ecc_make_key_ex(&rng, key_size, &wolf_ecc_key, curve_id);
     if (ret != 0)
     {
       commons.log_error("wc_ecc_make_key_ex");
       return ret;
     }
     break;
-  case EDDSA_448:
-    esp_task_wdt_reset();
-    ret = wc_ed448_make_key(rng, key_size, wolf_ed448_key);
-    esp_task_wdt_reset();
-    if (ret != 0)
-    {
-      commons.log_error("wc_ed448_make_key");
-      return ret;
-    }
-    break;
   }
 
   unsigned long end_time = esp_timer_get_time() / 1000;
-  int final_memory = esp_get_minimum_free_heap_size();
-  size_t cycle_count_after = esp_cpu_get_cycle_count();
-  heap_caps_monitor_local_minimum_free_size_stop();
-
-  commons.print_elapsed_time(start_time, end_time, "gen_keys");
-  commons.print_used_memory(initial_memory, final_memory, "gen_keys");
-  commons.print_total_cycles(cycle_count_before, cycle_count_after, "gen_keys");
+  ESP_LOGI(TAG, "wolfssl_gen_keys completed in %lu ms", end_time - start_time);
 
   commons.log_success("gen_keys");
   return 0;
@@ -155,16 +130,12 @@ int WolfsslModule::gen_keys()
 
 int WolfsslModule::gen_rsa_keys(unsigned int rsa_key_size, int rsa_exponent)
 {
-  heap_caps_monitor_local_minimum_free_size_start();
-  int initial_memory = esp_get_minimum_free_heap_size();
+  // CORREÇÃO: Remover medição de memória
   unsigned long start_time = esp_timer_get_time() / 1000;
-  unsigned long cycle_count_before = esp_cpu_get_cycle_count();
 
   this->rsa_key_size = rsa_key_size;
 
-  esp_task_wdt_reset();
-  int ret = wc_MakeRsaKey(wolf_rsa_key, rsa_key_size, rsa_exponent, rng);
-  esp_task_wdt_reset();
+  int ret = wc_MakeRsaKey(&wolf_rsa_key, rsa_key_size, rsa_exponent, &rng);
   if (ret != 0)
   {
     commons.log_error("wc_MakeRsaKey");
@@ -172,238 +143,217 @@ int WolfsslModule::gen_rsa_keys(unsigned int rsa_key_size, int rsa_exponent)
   }
 
   unsigned long end_time = esp_timer_get_time() / 1000;
-  int final_memory = esp_get_minimum_free_heap_size();
-  size_t cycle_count_after = esp_cpu_get_cycle_count();
-  heap_caps_monitor_local_minimum_free_size_stop();
-
-  commons.print_elapsed_time(start_time, end_time, "gen_keys");
-  commons.print_used_memory(initial_memory, final_memory, "gen_keys");
-  commons.print_total_cycles(cycle_count_before, cycle_count_after, "gen_keys");
+  ESP_LOGI(TAG, "wolfssl_gen_rsa_keys completed in %lu ms", end_time - start_time);
 
   commons.log_success("gen_keys");
   return 0;
 }
 
-int WolfsslModule::sign(const unsigned char *message, size_t message_length, unsigned char *signature, size_t *signature_length)
+int WolfsslModule::sign(const unsigned char *message, size_t message_length, 
+                        unsigned char *signature, size_t *signature_length)
 {
-  int hash_initial_memory = esp_get_minimum_free_heap_size();
-  unsigned long hash_start_time = esp_timer_get_time() / 1000;
+  int ret;
+  byte *hash = NULL;
+  size_t hash_length = 0;
+  bool needs_hash = true;
 
-  size_t hash_length = commons.get_hash_length();
-  byte *hash = (byte *)malloc(hash_length * sizeof(byte));
-
-  int ret = hash_message(message, message_length, hash);
-  if (ret != 0)
-  {
-    commons.log_error("hash_message");
-    return ret;
+  if (commons.get_chosen_algorithm() == EDDSA_25519 ||
+      commons.get_chosen_algorithm() == EDDSA_448) {
+    needs_hash = false;
   }
 
-  unsigned long hash_end_time = esp_timer_get_time() / 1000;
-  int hash_final_memory = esp_get_minimum_free_heap_size();
+  // CORREÇÃO: Remover medição de memória do hash
+  if (needs_hash) {
+    hash_length = commons.get_hash_length();
+    hash = (byte *)malloc(hash_length * sizeof(byte));
 
-  commons.print_elapsed_time(hash_start_time, hash_end_time, "hash_message");
-  commons.print_used_memory(hash_initial_memory, hash_final_memory, "hash_message");
+    ret = hash_message(message, message_length, hash);
+    if (ret != 0)
+    {
+      ESP_LOGE(TAG, "hash_message failed: %d", ret);
+      commons.log_error("hash_message");
+      free(hash);
+      return ret;
+    }
+  }
 
-  heap_caps_monitor_local_minimum_free_size_start();
-  int initial_memory = esp_get_minimum_free_heap_size();
+  // CORREÇÃO: Remover medição de memória
   unsigned long start_time = esp_timer_get_time() / 1000;
-  unsigned long cycle_count_before = esp_cpu_get_cycle_count();
 
   switch (commons.get_chosen_algorithm())
   {
   case EDDSA_25519:
-    esp_task_wdt_reset();
-    ret = wc_ed25519ph_sign_hash(hash, hash_length, signature, signature_length, wolf_ed25519_key, NULL, 0);
-    esp_task_wdt_reset();
+    ret = wc_ed25519_sign_msg(message, message_length, signature, signature_length, &wolf_ed25519_key);
     if (ret != 0)
     {
-      commons.log_error("wc_ed25519ph_sign_hash");
+      commons.log_error("wc_ed25519_sign_msg");
       return ret;
     }
     break;
   case RSA:
-    esp_task_wdt_reset();
-    ret = wc_RsaSSL_Sign(hash, hash_length, signature, *signature_length, wolf_rsa_key, rng);
-    esp_task_wdt_reset();
-    if (ret != *signature_length)
+    ret = wc_RsaSSL_Sign(hash, hash_length, signature, *signature_length, &wolf_rsa_key, &rng);
+    if (ret < 0)
     {
       commons.log_error("wc_RsaSSL_Sign");
+      free(hash);
       return ret;
     }
+    *signature_length = ret;
     break;
   case ECDSA_BP256R1:
   case ECDSA_BP512R1:
   case ECDSA_SECP256R1:
   case ECDSA_SECP521R1:
-    esp_task_wdt_reset();
-    ret = wc_ecc_sign_hash(hash, hash_length, signature, signature_length, rng, wolf_ecc_key);
-    esp_task_wdt_reset();
+    ret = wc_ecc_sign_hash(hash, hash_length, signature, signature_length, &rng, &wolf_ecc_key);
     if (ret != 0)
     {
+      ESP_LOGE(TAG, "wc_ecc_sign_hash failed: %d", ret);
       commons.log_error("wc_ecc_sign_hash");
+      free(hash);
       return ret;
     }
     break;
   case EDDSA_448:
-    esp_task_wdt_reset();
-    ret = wc_ed448ph_sign_hash(hash, hash_length, signature, signature_length, wolf_ed448_key, NULL, 0);
-    esp_task_wdt_reset();
+    ret = wc_ed448_sign_msg(message, message_length, signature, signature_length, &wolf_ed448_key, NULL, 0);
     if (ret != 0)
     {
-      commons.log_error("wc_ed448ph_sign_hash");
+      commons.log_error("wc_ed448_sign_msg");
       return ret;
     }
     break;
   }
 
   unsigned long end_time = esp_timer_get_time() / 1000;
-  int final_memory = esp_get_minimum_free_heap_size();
-  size_t cycle_count_after = esp_cpu_get_cycle_count();
-  heap_caps_monitor_local_minimum_free_size_stop();
+  // Apenas log de tempo
+  // ESP_LOGD(TAG, "wolfssl_sign: %lu ms", end_time - start_time);
 
-  commons.print_elapsed_time(start_time, end_time, "sign");
-  commons.print_used_memory(initial_memory, final_memory, "sign");
-  commons.print_total_cycles(cycle_count_before, cycle_count_after, "sign");
-
-  free(hash);
+  if (needs_hash && hash != NULL) {
+    free(hash);
+  }
 
   commons.log_success("sign");
   return 0;
 }
 
-int WolfsslModule::verify(const unsigned char *message, size_t message_length, unsigned char *signature, size_t signature_length)
+int WolfsslModule::verify(const unsigned char *message, size_t message_length, 
+                          unsigned char *signature, size_t signature_length)
 {
-  unsigned long hash_start_time = esp_timer_get_time() / 1000;
-  int hash_initial_memory = esp_get_minimum_free_heap_size();
+  int ret;
+  byte *hash = NULL;
+  size_t hash_length = 0;
+  bool needs_hash = true;
 
-  size_t hash_length = commons.get_hash_length();
-  byte *hash = (byte *)malloc(hash_length * sizeof(byte));
-
-  int ret = hash_message(message, message_length, hash);
-  if (ret != 0)
-  {
-    commons.log_error("hash_message");
-    return ret;
+  if (commons.get_chosen_algorithm() == EDDSA_25519 ||
+      commons.get_chosen_algorithm() == EDDSA_448) {
+    needs_hash = false;
   }
 
-  int hash_final_memory = esp_get_minimum_free_heap_size();
-  unsigned long hash_end_time = esp_timer_get_time() / 1000;
+  // CORREÇÃO: Remover medição de memória
+  if (needs_hash) {
+    hash_length = commons.get_hash_length();
+    hash = (byte *)malloc(hash_length * sizeof(byte));
 
-  commons.print_elapsed_time(hash_start_time, hash_end_time, "hash_message");
-  commons.print_used_memory(hash_initial_memory, hash_final_memory, "hash_message");
+    ret = hash_message(message, message_length, hash);
+    if (ret != 0)
+    {
+      ESP_LOGE(TAG, "hash_message failed: %d", ret);
+      commons.log_error("hash_message");
+      free(hash);
+      return ret;
+    }
+  }
 
-  heap_caps_monitor_local_minimum_free_size_start();
-  int initial_memory = esp_get_minimum_free_heap_size();
   unsigned long start_time = esp_timer_get_time() / 1000;
-  unsigned long cycle_count_before = esp_cpu_get_cycle_count();
-
-  byte *decrypted_signature = (byte *)malloc(hash_length * sizeof(byte));
 
   int verify_status = 0;
   switch (commons.get_chosen_algorithm())
   {
   case EDDSA_25519:
-    esp_task_wdt_reset();
-    ret = wc_ed25519ph_verify_hash(signature, signature_length, hash, hash_length, &verify_status, wolf_ed25519_key, NULL, 0);
-    esp_task_wdt_reset();
+    ret = wc_ed25519_verify_msg(signature, signature_length, message, message_length,
+                                 &verify_status, &wolf_ed25519_key);
     if (ret != 0)
     {
-      commons.log_error("wc_ed25519ph_verify_hash");
+      ESP_LOGE(TAG, "wc_ed25519_verify_msg failed: %d", ret);
+      commons.log_error("wc_ed25519_verify_msg");
       return ret;
-    }
-
-    if (verify_status != 1)
-    {
-      ESP_LOGE(TAG, "> Signature not valid.");
     }
     break;
   case RSA:
-    esp_task_wdt_reset();
-    ret = wc_RsaSSL_Verify(signature, signature_length, decrypted_signature, hash_length, wolf_rsa_key);
-    esp_task_wdt_reset();
-    if (ret != hash_length)
     {
-      commons.log_error("wc_RsaSSL_Verify");
-      return ret;
-    }
-
-    verify_status = memcmp(hash, decrypted_signature, hash_length);
-    if (verify_status != 0)
-    {
-      ESP_LOGE(TAG, "> Signature not valid.");
+      byte *decrypted_signature = (byte *)malloc(hash_length * sizeof(byte));
+      ret = wc_RsaSSL_Verify(signature, signature_length, decrypted_signature, hash_length, &wolf_rsa_key);
+      if (ret < 0)
+      {
+        ESP_LOGE(TAG, "wc_RsaSSL_Verify failed: %d", ret);
+        commons.log_error("wc_RsaSSL_Verify");
+        free(hash);
+        free(decrypted_signature);
+        return ret;
+      }
+      verify_status = (memcmp(hash, decrypted_signature, hash_length) == 0) ? 1 : 0;
+      free(decrypted_signature);
     }
     break;
   case ECDSA_BP256R1:
   case ECDSA_BP512R1:
   case ECDSA_SECP256R1:
   case ECDSA_SECP521R1:
-    esp_task_wdt_reset();
-    ret = wc_ecc_verify_hash(signature, signature_length, hash, hash_length, &verify_status, wolf_ecc_key);
-    esp_task_wdt_reset();
+    ret = wc_ecc_verify_hash(signature, signature_length, hash, hash_length,
+                              &verify_status, &wolf_ecc_key);
     if (ret != 0)
     {
+      ESP_LOGE(TAG, "wc_ecc_verify_hash failed: %d", ret);
       commons.log_error("wc_ecc_verify_hash");
+      free(hash);
       return ret;
-    }
-
-    if (verify_status != 1)
-    {
-      ESP_LOGE(TAG, "> Signature not valid.");
     }
     break;
   case EDDSA_448:
-    esp_task_wdt_reset();
-    ret = wc_ed448ph_verify_hash(signature, signature_length, hash, hash_length, &verify_status, wolf_ed448_key, NULL, 0);
-    esp_task_wdt_reset();
+    ret = wc_ed448_verify_msg(signature, signature_length, message, message_length,
+                               &verify_status, &wolf_ed448_key, NULL, 0);
     if (ret != 0)
     {
-      commons.log_error("wc_ed448ph_verify_hash");
+      ESP_LOGE(TAG, "wc_ed448_verify_msg failed: %d", ret);
+      commons.log_error("wc_ed448_verify_msg");
       return ret;
-    }
-
-    if (verify_status != 1)
-    {
-      ESP_LOGE(TAG, "> Signature not valid.");
     }
     break;
   }
 
+  if (verify_status != 1)
+  {
+    ESP_LOGE(TAG, "Signature verification failed (status: %d)", verify_status);
+  }
+
   unsigned long end_time = esp_timer_get_time() / 1000;
-  int final_memory = esp_get_minimum_free_heap_size();
-  size_t cycle_count_after = esp_cpu_get_cycle_count();
-  heap_caps_monitor_local_minimum_free_size_stop();
+  // ESP_LOGD(TAG, "wolfssl_verify: %lu ms", end_time - start_time);
 
-  commons.print_elapsed_time(start_time, end_time, "verify");
-  commons.print_used_memory(initial_memory, final_memory, "verify");
-  commons.print_total_cycles(cycle_count_before, cycle_count_after, "verify");
-
-  free(hash);
-  free(decrypted_signature);
+  if (needs_hash && hash != NULL) {
+    free(hash);
+  }
 
   commons.log_success("verify");
   return 0;
 }
-
 void WolfsslModule::close()
 {
   wolfCrypt_Cleanup();
-  wc_FreeRng(rng);
+  wc_FreeRng(&rng);
   if (commons.get_chosen_algorithm() == Algorithms::RSA)
   {
-    wc_FreeRsaKey(wolf_rsa_key);
+    wc_FreeRsaKey(&wolf_rsa_key);
   }
   else if (commons.get_chosen_algorithm() == Algorithms::EDDSA_25519)
   {
-    wc_ed25519_free(wolf_ed25519_key);
+    wc_ed25519_free(&wolf_ed25519_key);
   }
   else if (commons.get_chosen_algorithm() == Algorithms::EDDSA_448)
   {
-    wc_ed448_free(wolf_ed448_key);
+    wc_ed448_free(&wolf_ed448_key);
   }
   else
   {
-    wc_ecc_free(wolf_ecc_key);
+    wc_ecc_free(&wolf_ecc_key);
   }
 
   ESP_LOGI(TAG, "> wolfssl closed.");
@@ -413,11 +363,11 @@ int WolfsslModule::get_key_size(int curve_id)
 {
   if (commons.get_chosen_algorithm() == Algorithms::EDDSA_25519)
   {
-    return ED25519_PUB_KEY_SIZE;
+    return ED25519_KEY_SIZE;
   }
   else if (commons.get_chosen_algorithm() == Algorithms::EDDSA_448)
   {
-    return ED448_PUB_KEY_SIZE;
+    return ED448_KEY_SIZE;
   }
   else if (commons.get_chosen_algorithm() == Algorithms::RSA)
   {
@@ -443,9 +393,13 @@ int WolfsslModule::get_ecc_curve_id()
   {
     return ECC_BRAINPOOLP256R1;
   }
-  else
+  else if (commons.get_chosen_algorithm() == Algorithms::ECDSA_BP512R1)
   {
     return ECC_BRAINPOOLP512R1;
+  }
+  else
+  {
+    return ECC_SECP256R1; // Default
   }
 }
 
@@ -465,7 +419,7 @@ size_t WolfsslModule::get_private_key_size()
   }
   else
   {
-    return wc_ecc_size(wolf_ecc_key);
+    return wc_ecc_size(&wolf_ecc_key);
   }
 }
 
@@ -505,6 +459,16 @@ int WolfsslModule::get_signature_size()
   {
     return rsa_key_size / 8;
   }
+  
+  // Para ECDSA, calcular tamanho adequado baseado na curva
+  if (commons.get_chosen_algorithm() >= ECDSA_BP256R1 && 
+      commons.get_chosen_algorithm() <= ECDSA_SECP521R1)
+  {
+    int curve_id = get_ecc_curve_id();
+    int key_size = wc_ecc_get_curve_size_from_id(curve_id);
+    // Assinatura ECDSA em formato DER: aproximadamente 2*key_size + 9 bytes
+    return (2 * key_size) + 9;
+  }
 
   return ECC_MAX_SIG_SIZE;
 }
@@ -519,21 +483,32 @@ int WolfsslModule::get_public_key_pem(unsigned char *public_key_pem)
   switch (commons.get_chosen_algorithm())
   {
   case EDDSA_25519:
-    ret = wc_ed25519_export_public(wolf_ed25519_key, der_pub_key, &der_pub_key_size);
+    ret = wc_ed25519_export_public(&wolf_ed25519_key, der_pub_key, &der_pub_key_size);
     cert_type = PUBLICKEY_TYPE;
     if (ret != 0)
     {
       commons.log_error("wc_ed25519_export_public");
+      free(der_pub_key);
+      return ret;
+    }
+    break;
+  case EDDSA_448:
+    ret = wc_ed448_export_public(&wolf_ed448_key, der_pub_key, &der_pub_key_size);
+    cert_type = PUBLICKEY_TYPE;
+    if (ret != 0)
+    {
+      commons.log_error("wc_ed448_export_public");
+      free(der_pub_key);
       return ret;
     }
     break;
   case RSA:
-    ret = wc_RsaKeyToPublicDer(wolf_rsa_key, der_pub_key, der_pub_key_size);
+    ret = wc_RsaKeyToPublicDer(&wolf_rsa_key, der_pub_key, der_pub_key_size);
     cert_type = RSA_PUBLICKEY_TYPE;
-
     if (ret < 0)
     {
       commons.log_error("wc_RsaKeyToPublicDer");
+      free(der_pub_key);
       return ret;
     }
     else
@@ -546,25 +521,17 @@ int WolfsslModule::get_public_key_pem(unsigned char *public_key_pem)
   case ECDSA_SECP256R1:
   case ECDSA_SECP521R1:
   default:
-    ret = wc_EccPublicKeyToDer(wolf_ecc_key, der_pub_key, der_pub_key_size, 0);
+    ret = wc_EccPublicKeyToDer(&wolf_ecc_key, der_pub_key, der_pub_key_size, 0);
     cert_type = ECC_PUBLICKEY_TYPE;
     if (ret < 0)
     {
       commons.log_error("wc_EccPublicKeyToDer");
+      free(der_pub_key);
       return ret;
     }
     else
     {
       der_pub_key_size = ret;
-    }
-    break;
-  case EDDSA_448:
-    ret = wc_ed448_export_public(wolf_ed448_key, der_pub_key, &der_pub_key_size);
-    cert_type = PUBLICKEY_TYPE;
-    if (ret != 0)
-    {
-      commons.log_error("wc_ed448_export_public");
-      return ret;
     }
     break;
   }
@@ -573,14 +540,16 @@ int WolfsslModule::get_public_key_pem(unsigned char *public_key_pem)
   if (ret < 0)
   {
     commons.log_error("wc_DerToPem");
+    free(der_pub_key);
     return ret;
   }
 
   ESP_LOGE(TAG, "public key pem size: %d", ret);
-  ESP_LOGE(TAG, "public key der size: %d", der_pub_key_size);
+  ESP_LOGE(TAG, "public key der size: %lu", (unsigned long)der_pub_key_size);
 
   public_key_pem[get_public_key_pem_size()] = '\0';
-
+  
+  free(der_pub_key);
   return 0;
 }
 
@@ -644,7 +613,7 @@ size_t WolfsslModule::get_private_key_pem_size()
   }
   else
   {
-    return 3260; // 3243;
+    return 3260;
   }
 }
 
@@ -712,7 +681,7 @@ size_t WolfsslModule::get_private_key_der_size()
   }
   else
   {
-    return 2400; // 2349;
+    return 2400;
   }
 }
 
@@ -726,7 +695,7 @@ int WolfsslModule::get_private_key_pem(unsigned char *private_key_pem)
   switch (commons.get_chosen_algorithm())
   {
   case EDDSA_25519:
-    ret = wc_ed25519_export_private(wolf_ed25519_key, der_priv_key, &der_priv_key_size);
+    ret = wc_ed25519_export_private(&wolf_ed25519_key, der_priv_key, &der_priv_key_size);
     cert_type = PRIVATEKEY_TYPE;
     if (ret != 0)
     {
@@ -735,8 +704,18 @@ int WolfsslModule::get_private_key_pem(unsigned char *private_key_pem)
       return ret;
     }
     break;
+  case EDDSA_448:
+    ret = wc_ed448_export_private(&wolf_ed448_key, der_priv_key, &der_priv_key_size);
+    cert_type = PRIVATEKEY_TYPE;
+    if (ret != 0)
+    {
+      commons.log_error("wc_ed448_export_private");
+      free(der_priv_key);
+      return ret;
+    }
+    break;
   case RSA:
-    ret = wc_RsaKeyToDer(wolf_rsa_key, der_priv_key, der_priv_key_size);
+    ret = wc_RsaKeyToDer(&wolf_rsa_key, der_priv_key, der_priv_key_size);
     cert_type = CertType::RSA_TYPE;
     if (ret < 0)
     {
@@ -754,7 +733,7 @@ int WolfsslModule::get_private_key_pem(unsigned char *private_key_pem)
   case ECDSA_SECP256R1:
   case ECDSA_SECP521R1:
   default:
-    ret = wc_EccKeyToDer(wolf_ecc_key, der_priv_key, der_priv_key_size);
+    ret = wc_EccKeyToDer(&wolf_ecc_key, der_priv_key, der_priv_key_size);
     cert_type = ECC_PRIVATEKEY_TYPE;
     if (ret < 0)
     {
@@ -767,31 +746,23 @@ int WolfsslModule::get_private_key_pem(unsigned char *private_key_pem)
       der_priv_key_size = ret;
     }
     break;
-  case EDDSA_448:
-    ret = wc_ed448_export_private(wolf_ed448_key, der_priv_key, &der_priv_key_size);
-    cert_type = PRIVATEKEY_TYPE;
-    if (ret != 0)
-    {
-      commons.log_error("wc_ed448_export_private");
-      free(der_priv_key);
-      return ret;
-    }
-    break;
   }
 
   ret = wc_DerToPem(der_priv_key, der_priv_key_size, private_key_pem, get_private_key_pem_size(), cert_type);
 
   ESP_LOGE(TAG, "private key pem size: %d", ret);
-  ESP_LOGE(TAG, "private key der size: %d", der_priv_key_size);
+  ESP_LOGE(TAG, "private key der size: %lu", (unsigned long)der_priv_key_size);
 
   if (ret < 0)
   {
     commons.log_error("wc_DerToPem");
+    free(der_priv_key);
     return ret;
   }
 
   private_key_pem[get_private_key_pem_size()] = '\0';
-
+  
+  free(der_priv_key);
   return 0;
 }
 
@@ -804,7 +775,7 @@ void WolfsslModule::save_private_key(const char *file_path, unsigned char *priva
   }
   else
   {
-    ESP_LOGE(TAG, "Failed to write private key to PEM format, mbedtls error code: %d", ret);
+    ESP_LOGE(TAG, "Failed to write private key to PEM format, wolfssl error code: %d", ret);
   }
 }
 
@@ -817,7 +788,7 @@ void WolfsslModule::save_public_key(const char *file_path, unsigned char *public
   }
   else
   {
-    ESP_LOGE(TAG, "Failed to write public key to PEM format, mbedtls error code: %d", ret);
+    ESP_LOGE(TAG, "Failed to write public key to PEM format, wolfssl error code: %d", ret);
   }
 }
 

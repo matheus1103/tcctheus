@@ -47,11 +47,11 @@ public:
 
 private:
   CryptoApiCommons &commons;
-  WC_RNG *rng;
-  ed25519_key *wolf_ed25519_key;
-  RsaKey *wolf_rsa_key;
-  ecc_key *wolf_ecc_key;
-  ed448_key *wolf_ed448_key;
+  WC_RNG rng;
+  ed25519_key wolf_ed25519_key;
+  RsaKey wolf_rsa_key;
+  ecc_key wolf_ecc_key;
+  ed448_key wolf_ed448_key;
   unsigned int rsa_key_size;
 
   int get_key_size(int curve_id);
