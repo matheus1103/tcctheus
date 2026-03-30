@@ -164,53 +164,54 @@ typedef struct {
 TestConfig test_configs[] = {
 
     // MBEDTLS
-    // RSA básico
-//     {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_256, 2048, "MBEDTLS_RSA_2048_SHA256"},
-//      {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_512, 2048, "MBEDTLS_RSA_2048_SHA512"},
-//     {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_256, 4096, "MBEDTLS_RSA_4096_SHA256"},
-//      {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_512, 4096, "MBEDTLS_RSA_4096_SHA512"},
+    // RSA
+    {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_256, 2048, "MBEDTLS_RSA_2048_SHA256"},
+     {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_512, 2048, "MBEDTLS_RSA_2048_SHA512"},
+    {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_256, 4096, "MBEDTLS_RSA_4096_SHA256"},
+     {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_512, 4096, "MBEDTLS_RSA_4096_SHA512"},
 
-// //    // ============ ECDSA P-256 (secp256r1) ============
-//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_P256_SHA256"},
-//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_P256_SHA512"},
+    // // // ============ ECDSA P-256 (secp256r1) ============
+    {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_P256_SHA256"},
+    {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_P256_SHA512"},
     
-// //     // // ============ ECDSA P-521 (secp521r1) ============
-//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_P521_SHA256"},
-//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_P521_SHA512"},
+    // // // ============ ECDSA P-521 (secp521r1) ============
+    {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_P521_SHA256"},
+    {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_P521_SHA512"},
     
-// //     // // ============ BRAINPOOL CURVES ============
-//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_BP256_SHA256"},
-//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_BP256_SHA512"},
-//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_BP512_SHA256"},
-//     {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_BP512_SHA512"},
+    // // // ============ BRAINPOOL CURVES ============
+    {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_BP256_SHA256"},
+    {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_BP256_SHA512"},
+    {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_256, 0, "MBEDTLS_ECDSA_BP512_SHA256"},
+    {Libraries::MBEDTLS_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_512, 0, "MBEDTLS_ECDSA_BP512_SHA512"},
 
     // WOLFSSL
-    // RSA básico
+    // RSA
     {Libraries::WOLFSSL_LIB, Algorithms::RSA, Hashes::MY_SHA_256, 2048, "WOLFSSL_LIB_RSA_2048_SHA256"},
-    // {Libraries::WOLFSSL_LIB, Algorithms::RSA, Hashes::MY_SHA_512, 2048, "WOLFSSL_LIB_RSA_2048_SHA512"},
+    {Libraries::WOLFSSL_LIB, Algorithms::RSA, Hashes::MY_SHA_512, 2048, "WOLFSSL_LIB_RSA_2048_SHA512"},
 
-   // ============ ECDSA P-256 (secp256r1) ============
-    // {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_P256_SHA256"},
-    // {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_P256_SHA512"},
+    // // // ============ ECDSA P-256 (secp256r1) ============
+    {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_P256_SHA256"},
+    {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_P256_SHA512"},
     
-    // // // // ============ ECDSA P-521 (secp521r1) ============
-    //  {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_P521_SHA256"},
-    //  {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_P521_SHA512"},
+    // // // ============ ECDSA P-521 (secp521r1) ============
+     {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_P521_SHA256"},
+     {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP521R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_P521_SHA512"},
     
-    // // // // ============ BRAINPOOL CURVES ============
-    //  {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_BP256_SHA256"},
-    //  {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_BP256_SHA512"},
-    //  {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_BP512_SHA256"},
-    //  {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_BP512_SHA512"},
+    // // // ============ BRAINPOOL CURVES ============
+     {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_BP256_SHA256"},
+     {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP256R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_BP256_SHA512"},
+     {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_ECDSA_BP512_SHA256"},
+     {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_BP512R1, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_ECDSA_BP512_SHA512"},
     
-    // {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_25519, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_EDDSA_25519"},
-    //  {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_25519, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_EDDSA_25519_SHA_512"},
-    //  {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_448, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_EDDSA_448_SHA_256"},
-    // {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_448, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_EDDSA_448_MY_SHA_512"},
-    // // MICROECC
-    // // ============ ECDSA P-256 (secp256r1) ============
-    //  {Libraries::MICROECC_LIB, Algorithms::ECDSA_SECP256R1 , Hashes::MY_SHA_256, 0, "MICROECC_LIB_ECDSA_P256_SHA256"},
-    //  {Libraries::MICROECC_LIB, Algorithms::ECDSA_SECP256R1 , Hashes::MY_SHA_512, 0, "MICROECC_LIB_ECDSA_P256_SHA512"},
+    {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_25519, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_EDDSA_25519"},
+     {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_25519, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_EDDSA_25519_SHA_512"},
+     {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_448, Hashes::MY_SHA_256, 0, "WOLFSSL_LIB_EDDSA_448_SHA_256"},
+    {Libraries::WOLFSSL_LIB, Algorithms::EDDSA_448, Hashes::MY_SHA_512, 0, "WOLFSSL_LIB_EDDSA_448_MY_SHA_512"},
+    
+    // MICROECC
+    // ============ ECDSA P-256 (secp256r1) ============
+     {Libraries::MICROECC_LIB, Algorithms::ECDSA_SECP256R1 , Hashes::MY_SHA_256, 0, "MICROECC_LIB_ECDSA_P256_SHA256"},
+     {Libraries::MICROECC_LIB, Algorithms::ECDSA_SECP256R1 , Hashes::MY_SHA_512, 0, "MICROECC_LIB_ECDSA_P256_SHA512"},
 
 
 };
