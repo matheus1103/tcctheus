@@ -1,232 +1,243 @@
 # ESP32 Crypto API
 
-A comprehensive cryptographic benchmarking framework for ESP32 devices, developed as part of the final university project/thesis, forked from https://github.com/bristotgl/esp32-crypto-api project titled "Digital Certification in IoT Devices."
+Cryptographic benchmark framework for ESP32 devices, focused on digital signatures, execution time, and memory footprint (heap + stack). This project is based on the original repository: https://github.com/bristotgl/esp32-crypto-api.
 
 ## Overview
 
-This project provides a unified API to benchmark and compare cryptographic libraries on ESP32 microcontrollers, with a focus on digital signature algorithms. The framework measures execution time, heap memory usage, and stack consumption across different cryptographic operations.
+The project provides a unified API (`CryptoAPI`) to execute the same benchmark flow across multiple crypto libraries and algorithms. The current benchmark pipeline in `main/main.cpp` runs in three phases:
 
-### Supported Libraries
+1. Memory profiling per configuration.
+2. Silent performance measurements (keygen/sign/verify).
+3. Aggregated report printing, including CSV lines in log output.
 
-- **mbedTLS** - Lightweight cryptographic library optimized for embedded systems
-- **WolfSSL** - Fast, portable, and comprehensive cryptographic library
-- **micro-ecc** - Compact ECDSA library for embedded systems
+## Supported Libraries and Algorithms
 
-### Supported Algorithms
+### Libraries
 
-- **RSA** - 2048-bit and 4096-bit key sizes
-- **ECDSA** - Multiple curves:
-  - secp256r1 (NIST P-256)
-  - secp521r1 (NIST P-521)
-  - brainpoolP256r1
-  - brainpoolP512r1
-- **EdDSA** - Ed25519 and Ed448 (WolfSSL only)
+- `mbedTLS`
+- `wolfSSL`
+- `micro-ecc`
 
-### Supported Hash Functions
+### Algorithms currently configured in `main/main.cpp`
 
-- SHA-256
-- SHA-512
+- `RSA` (mbedTLS and wolfSSL)
+   - 2048 bits
+   - 4096 bits (mbedTLS)
+- `ECDSA`
+   - `secp256r1` (P-256)
+   - `secp521r1` (P-521)
+   - `brainpoolP256r1`
+   - `brainpoolP512r1`
+- `EdDSA` (wolfSSL)
+   - `Ed25519`
+   - `Ed448`
 
-## Features
+### Hashes currently configured in benchmarks
 
-- **Comprehensive Benchmarking**: Measures key generation, signing, and verification operations
-- **Memory Profiling**: Detailed heap and stack usage analysis using ESP32-C6's local memory monitoring
-- **Statistical Analysis**: Min, max, average, median, and standard deviation calculations
-- **CSV Export**: Results formatted for easy data analysis
-- **Configurable Tests**: Multiple test configurations for different library/algorithm/hash combinations
+- `SHA-256`
+- `SHA-512`
+
+## Main Features
+
+- Unified benchmark API for different crypto backends.
+- Detailed memory profiling using local heap monitoring and stack high-water mark.
+- Performance measurements for key generation, signature, and verification.
+- CSV output in logs for downstream analysis.
+- Python helper scripts for post-processing.
 
 ## Requirements
 
 ### Hardware
-- ESP32-C6 development board (or compatible ESP32 variant)
-- USB cable for flashing and monitoring
+
+- ESP32 board (the current benchmark header references ESP32-C6).
+- USB cable for flashing/monitoring.
 
 ### Software
-- **ESP-IDF**: Framework version 5.3.1 or later
-  - Follow the [ESP-IDF official documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html) for installation
-- **VSCode** (recommended): For easier development and debugging
-  - Install the ESP-IDF VSCode extension for best experience
 
-## Setup Instructions
+- ESP-IDF `5.3.1+` (recommended).
+- Python environment provided by ESP-IDF tools.
+- VS Code + ESP-IDF extension (recommended workflow).
+
+## Setup
 
 ### 1. Install ESP-IDF
 
-Follow the official ESP-IDF installation guide for your operating system. Ensure the ESP-IDF tools are properly added to your system PATH.
+Follow the official documentation:
+https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html
 
-### 2. Setting up WolfSSL
+Use an ESP-IDF shell (`ESP-IDF PowerShell`, `ESP-IDF CMD`, or equivalent terminal with `idf.py` available).
 
-WolfSSL requires its source code to be available outside the project directory:
+### 2. Configure wolfSSL source location
 
-1. Download the WolfSSL source code from the [GitHub releases page (v5.7.4-stable)](https://github.com/wolfSSL/wolfssl/releases/tag/v5.7.4-stable)
-2. Extract the downloaded archive to your desired location (e.g., `C:\wolfssl-source` or `/home/user/wolfssl-source`)
-3. Create a system-wide environment variable:
-   - **Variable name**: `WOLFSSL_ROOT`
-   - **Variable value**: Path to the WolfSSL source directory (e.g., `C:\wolfssl-source`)
-4. Restart your terminal/IDE or reboot your machine to apply the environment variable
-5. The build system will automatically detect and link WolfSSL during compilation
+This repository includes a local wolfSSL ESP-IDF component under `components/wolfssl`, but it still expects the wolfSSL source tree path via `WOLFSSL_ROOT`.
 
-### 3. Clone and Configure the Project
+1. Download/extract wolfSSL source code.
+2. Set environment variable `WOLFSSL_ROOT` to the wolfSSL root folder.
+
+Windows (PowerShell, current session):
+
+```powershell
+$env:WOLFSSL_ROOT = "C:\path\to\wolfssl"
+```
+
+Linux/macOS (bash/zsh, current session):
+
+```bash
+export WOLFSSL_ROOT="/path/to/wolfssl"
+```
+
+If needed, persist the environment variable in your system/user profile.
+
+### 3. Clone project
 
 ```bash
 git clone <repository-url>
 cd esp32-crypto-api
 ```
 
-## Configuration
+## Build and Run
 
-### Selecting Test Configurations
+### CLI flow
 
-Edit the `test_configs[]` array in [main/main.cpp](main/main.cpp) to enable/disable specific test configurations:
+1. Set target (first build or when changing board):
 
-```cpp
-TestConfig test_configs[] = {
-    // Example: Enable mbedTLS RSA-2048 with SHA-256
-    {Libraries::MBEDTLS_LIB, Algorithms::RSA, Hashes::MY_SHA_256, 2048, "MBEDTLS_RSA_2048_SHA256"},
-
-    // Example: Enable WolfSSL ECDSA P-256 with SHA-256
-    {Libraries::WOLFSSL_LIB, Algorithms::ECDSA_SECP256R1, Hashes::MY_SHA_256, 0, "WOLFSSL_ECDSA_P256_SHA256"},
-
-    // Uncomment desired configurations...
-};
+```bash
+idf.py set-target esp32c6
 ```
 
-### Test Parameters
+2. Build:
 
-You can adjust the number of test iterations in [main/main.cpp](main/main.cpp):
-
-```cpp
-#define NUM_KEY_GENERATIONS 10   // Number of key generation tests
-#define NUM_SIGN_TESTS 10        // Number of signing operations per string
-#define NUM_VERIFY_TESTS 10      // Number of verification operations per string
+```bash
+idf.py build
 ```
 
-## Building and Running
-
-### Using Command Line
-
-1. Connect your ESP32 device to your computer
-2. Open ESP-IDF PowerShell or ESP-IDF CMD
-3. Navigate to the project directory:
-   ```bash
-   cd <path-to-project>/esp32-crypto-api
-   ```
-
-4. Set the target device (first time only or when changing targets):
-   ```bash
-   idf.py set-target esp32c6
-   ```
-
-5. Build the project:
-   ```bash
-   idf.py build
-   ```
-
-6. Flash to the device:
-   ```bash
-   idf.py flash
-   ```
-
-7. Monitor the output:
-   ```bash
-   idf.py monitor
-   ```
-
-   Press `Ctrl+]` to exit the monitor.
-
-### Using VSCode
-
-1. Connect your ESP32 device
-2. Open the project folder in VSCode
-3. Use the ESP-IDF extension commands:
-   - `Ctrl+Shift+P` → `ESP-IDF: Set Espressif Device Target` (first time only)
-   - `Ctrl+Shift+P` → `ESP-IDF: Build your project`
-   - `Ctrl+Shift+P` → `ESP-IDF: Flash your project`
-   - `Ctrl+Shift+P` → `ESP-IDF: Monitor device`
-
-### Quick Start
-
-If you already have a build folder, you can flash and monitor directly:
+3. Flash and monitor:
 
 ```bash
 idf.py flash monitor
 ```
 
-If you encounter build errors, delete the `build` folder and rebuild:
+To exit monitor, press `Ctrl+]`.
+
+### Clean and rebuild
 
 ```bash
-rm -rf build
+idf.py fullclean
 idf.py build
 ```
 
-## Output Format
+If you prefer deleting the `build` directory manually:
 
-The benchmark outputs detailed results including:
+Windows PowerShell:
 
-### Memory Profile
-- Heap and stack usage for each operation (init, key generation, signing, verification)
-- Persistent heap allocation
-- Peak stack usage
-- Total memory footprint
-
-### Performance Metrics
-- Key generation statistics (min, max, avg, std deviation)
-- Sign/verify operation timings for different message sizes
-- CSV-formatted data for easy analysis
-
-### Sample Output
+```powershell
+Remove-Item -Recurse -Force .\build
 ```
-=== PROFILING DE MEMÓRIA: WOLFSSL_RSA_2048_SHA256 ===
-FOOTPRINT DE MEMÓRIA:
-  Heap persistente:  12345 bytes
-  Stack pico usado:  4567 bytes
-  TOTAL:             16912 bytes
+
+Linux/macOS:
+
+```bash
+rm -rf build
 ```
+
+### VS Code tasks available in this workspace
+
+- `Build - Build project`
+- `Set ESP-IDF Target`
+- `Clean - Clean the project`
+- `Flash - Flash the device`
+- `Monitor: Start the monitor`
+
+## Benchmark Configuration
+
+### Enable/disable test sets
+
+Edit `test_configs[]` in `main/main.cpp`.
+
+Each entry defines:
+
+- library (`Libraries` enum)
+- algorithm (`Algorithms` enum)
+- hash (`Hashes` enum)
+- RSA key size (or `0` for non-RSA)
+- display name for logs
+
+### Iteration counts
+
+In `main/main.cpp`:
+
+```cpp
+#define NUM_KEY_GENERATIONS 10
+#define NUM_SIGN_TESTS 10
+#define NUM_VERIFY_TESTS 10
+```
+
+## Output and Metrics
+
+The benchmark logs include:
+
+- Memory footprint summary per configuration:
+   - persistent heap delta
+   - peak stack usage
+   - total footprint
+- Timing statistics for key generation:
+   - average, minimum, maximum, standard deviation
+- Per-message-size sign/verify timings.
+- CSV records with schema:
+
+```text
+Config,Operation,StringSize,Type,Iteration,Time_us,HeapUsed,StackUsed
+```
+
+## Result Analysis Scripts
+
+- `analyze_memory.py`
+- `analyze_memory_visual.py`
+
+These scripts can be used to process benchmark output files and generate summaries/visualizations.
 
 ## Project Structure
 
-```
+```text
 esp32-crypto-api/
-├── components/
-│   ├── CryptoAPI/          # Main API implementation
-│   │   ├── include/        # Header files
-│   │   └── src/            # Source files
-│   ├── micro-ecc/          # micro-ecc library
-│   └── wolfssl/            # WolfSSL configuration
-├── experiments/
-│   └── test_strings_exact.h # Test data strings
-├── main/
-│   ├── main.cpp            # Benchmark implementation
-│   └── CMakeLists.txt
-├── CMakeLists.txt          # Project configuration
-└── README.md
+|- components/
+|  |- CryptoAPI/
+|  |  |- include/
+|  |  |- src/
+|  |- micro-ecc/
+|  |- wolfssl/
+|- experiments/
+|  |- test_strings_exact.h
+|- main/
+|  |- main.cpp
+|- CMakeLists.txt
+|- partitions.csv
+|- sdkconfig
+|- README.md
 ```
-
-## Analyzing Results
-
-The benchmark outputs CSV-formatted data that can be analyzed using Python scripts:
-
-- `analyze_memory.py` - Memory usage analysis
-- `analyze_memory_visual.py` - Visual memory analysis with charts
 
 ## Troubleshooting
 
-### Common Issues
+### Build fails with wolfSSL errors
 
-1. **Build fails with WolfSSL errors**
-   - Ensure `WOLFSSL_ROOT` environment variable is set correctly
-   - Verify WolfSSL version is v5.7.4-stable
-   - Restart your terminal/IDE after setting the environment variable
+- Validate `WOLFSSL_ROOT` path.
+- Confirm ESP-IDF environment is loaded in the current shell.
+- Ensure there is no component conflict between:
+   - `components/wolfssl`
+   - `managed_components/wolfssl__wolfssl`
 
-2. **Flash fails or device not detected**
-   - Check USB cable connection
-   - Verify correct serial port in VSCode or menuconfig
-   - Try pressing the BOOT button on ESP32 during flashing
+### Flash or monitor issues
 
-3. **Out of memory errors**
-   - Reduce the number of test iterations
-   - Disable some test configurations
-   - Check the `sdkconfig` for memory settings
+- Check USB cable and serial port.
+- Verify selected port/target in ESP-IDF extension.
+- Retry with board in bootloader mode when needed.
 
+### Memory pressure during benchmarks
 
-## Author
-Matheus Francisco Rodrigues Lima, forked from https://github.com/bristotgl/esp32-crypto-api
+- Reduce `NUM_KEY_GENERATIONS`, `NUM_SIGN_TESTS`, and `NUM_VERIFY_TESTS`.
+- Temporarily reduce enabled entries in `test_configs[]`.
+
+## Credits
+
+- Current work: Matheus Francisco Rodrigues Lima
+- Based on: https://github.com/bristotgl/esp32-crypto-api
